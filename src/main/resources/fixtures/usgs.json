@@ -1,0 +1,22 @@
+{
+  "synthetic": true,
+  "type": "FeatureCollection",
+  "metadata": {"title": "SYNTHETIC OFFLINE FIXTURE - NOT A REAL EARTHQUAKE"},
+  "features": [{
+    "type": "Feature",
+    "id": "synthetic-earthquake-001",
+    "properties": {
+      "title": "SYNTHETIC: M 5.2 - Fictional Ocean Test Zone",
+      "mag": 5.2,
+      "place": "Fictional Ocean Test Zone",
+      "time": 1792803600000,
+      "updated": 1792803900000,
+      "url": "https://earthquake.usgs.gov/earthquakes/eventpage/synthetic-earthquake-001",
+      "status": "reviewed",
+      "net": "us",
+      "type": "earthquake",
+      "tsunami": 0
+    },
+    "geometry": {"type": "Point", "coordinates": [150.0, 0.0, 10.0]}
+  }]
+}

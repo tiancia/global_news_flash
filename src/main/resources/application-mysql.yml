@@ -1,0 +1,7 @@
+# A dedicated, already provisioned schema/user is required. No Trade connections.
+spring:
+  datasource:
+    url: ${NEWS_DB_URL}
+    username: ${NEWS_DB_USER}
+    password: ${NEWS_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver

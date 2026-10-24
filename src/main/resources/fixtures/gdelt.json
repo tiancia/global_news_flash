@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "articles": [{
+    "url": "https://synthetic.example.org/news/offline-sample?utm_source=fixture#top",
+    "title": "SYNTHETIC discovery link for offline parser tests",
+    "seendate": "20261024T010000Z",
+    "domain": "synthetic.example.org",
+    "language": "English"
+  }]
+}

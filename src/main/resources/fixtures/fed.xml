@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" synthetic="true">
+  <channel>
+    <title>SYNTHETIC Federal Reserve RSS fixture - not a real announcement</title>
+    <link>https://www.federalreserve.gov/</link>
+    <description>Offline structure sample only.</description>
+    <item>
+      <title>SYNTHETIC Board announcement for offline testing</title>
+      <link>https://www.federalreserve.gov/newsevents/pressreleases/synthetic-offline.htm</link>
+      <guid>synthetic-fed-announcement-001</guid>
+      <description>SYNTHETIC Board announcement for offline testing</description>
+      <pubDate>Sat, 24 Oct 2026 01:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

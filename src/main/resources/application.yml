@@ -1,0 +1,40 @@
+spring:
+  autoconfigure:
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  application:
+    name: global-news-flash
+  profiles:
+    default: offline
+  threads:
+    virtual:
+      enabled: true
+  flyway:
+    enabled: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+server:
+  address: ${NEWS_BIND_ADDRESS:127.0.0.1}
+  port: ${NEWS_PORT:8090}
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    arg-name-based-constructor-auto-mapping: true
+news:
+  runtime:
+    mode: OFFLINE
+    external-enabled: false
+    preferred-provider: openai
+  ops:
+    token: ${NEWS_OPS_TOKEN:}

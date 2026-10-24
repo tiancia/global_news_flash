@@ -1,0 +1,4 @@
+# Explicit fictional scenario clock and selection policy; never a production operating policy.
+news:
+  clock:
+    fixed: 2026-10-24T14:00:00Z
