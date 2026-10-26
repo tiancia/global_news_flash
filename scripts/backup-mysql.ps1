@@ -19,7 +19,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
-$dockerCommand = (Get-Command docker -CommandType Application -ErrorAction Stop).Source
+$dockerCommand = (Get-Command docker.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $composePath = (Resolve-Path -LiteralPath $ComposeFile -ErrorAction Stop).ProviderPath
 $backupRoot = [IO.Path]::GetFullPath($BackupDirectory)
 [IO.Directory]::CreateDirectory($backupRoot) | Out-Null

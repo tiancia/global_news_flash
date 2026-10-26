@@ -2,13 +2,15 @@
 
 独立的英文 Telegram 新闻后端，Java 21 / Spring Boot / MyBatis。保留离线演示，新增显式启用的真实采集、OpenAI 编辑、Telegram 发布、周期任务、日报和告警接口。
 
-**当前状态：真实接入代码已补充，本批次按要求未编译、未测试、未调用新闻源/OpenAI/Telegram、未部署。下面描述的是代码能力；真实权限、新闻质量、成本、MySQL 迁移和长期运行仍待配置后验证。之前离线版本的测试结果不能作为本批次的验证结果。**
+**当前状态：本机 MySQL 健康检查及后端启动已通过，Fed 已成功采集并入库 3 条含正文的待处理内容。XML BOM 兼容修复通过 18 项采集定向测试，实际 RSS 的 20 条元数据可正常解析。OpenAI 试请求返回 API 余额不足，按要求暂停后续真实 AI 调用；Telegram 权限与发送、英文成稿、新闻质量、成本及长期运行仍待联调，尚未部署。**
 
 ## 环境变量
 
 完整名称和默认值见 [.env.example](.env.example)。应用读取进程或容器环境变量；`java -jar` 不会自动加载 `.env` / `.env.example`。修改环境变量后需重启。不要将密钥提交到 Git 或放进聊天、新闻来源 URL、日志。
 
-### 真实流程必需配置
+### 真实流程配置
+
+密钥通过环境变量提供。首次手动采集使用 `mysql,live` Profile；`application-live.yml` 已设置 LIVE、外部访问、采集和美联储来源，首批每次最多处理 3 条。下表的运行开关可用环境变量覆盖，无需逐项新建 Windows 用户变量。自动任务、运营策略确认、Telegram 发送、日报和告警仍默认关闭。
 
 | 变量 | 用途 |
 | --- | --- |
@@ -16,17 +18,19 @@
 | `NEWS_EXTERNAL_ENABLED=true` | 允许外部客户端，默认 false |
 | `NEWS_OPS_TOKEN` | 至少 32 字符的独立运维令牌 |
 | `OPENAI_API_KEY` | OpenAI API 密钥 |
-| `OPENAI_MODEL` | 账户可用且支持 Responses structured outputs 的模型，没有隐含模型默认值 |
-| `NEWS_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS` | 所选模型每百万输入 token 的价格，单位为微美元 |
-| `NEWS_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS` | 所选模型每百万输出 token 的价格，单位为微美元 |
 | `NEWS_TELEGRAM_BOT_TOKEN` | 具有目标频道管理员权限的 Bot token |
-| `NEWS_TELEGRAM_CHAT_ID` | 频道 `-100...` 数字 ID 或 `@username`；首次使用私有测试频道 |
 | `NEWS_INGESTION_ENABLED=true` | 启用真实采集 |
 | `NEWS_POLICY_READY=true` | 确认已检查运营参数 |
 
-1 美元 = 1,000,000 微美元。价格字段填写“每百万 token 的美元价格 × 1,000,000”；例如**仅作换算示例**：0.25 美元/百万 token 对应 `250000`，不代表任何模型的当前价格。按所选模型的 [OpenAI 官方价格](https://developers.openai.com/api/docs/pricing) 填写。价格缺失或为零会阻止请求。
+模型和单价属于非敏感配置，直接在 `src/main/resources/application.yml` 的 `news.openai` 下维护，无需新建用户环境变量。当前默认 `gpt-6-luna`，每百万输入/输出 token 分别为 `100000` / `500000` 微美元（2026-10-26 标准短上下文基础价格）。更换模型时同时更新两项单价，并确认账户具备相应访问权限。
+
+测试频道 ID 也在同一文件的 `news.telegram.chat-id` 下维护，当前默认 `-1004482990261`，来自已创建私有测试频道的消息链接。`NEWS_TELEGRAM_CHAT_ID` 仅用于可选覆盖，无需新建环境变量；更换频道时更新此配置。频道 ID 已填写不代表 Bot 权限已通过 API 验证，真实发送仍默认关闭。
+
+1 美元 = 1,000,000 微美元。价格字段填写“每百万 token 的美元价格 × 1,000,000”。按所选模型的 [OpenAI 官方价格](https://developers.openai.com/api/docs/pricing) 更新；价格缺失或为零会阻止请求。`OPENAI_MODEL`、`NEWS_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS`、`NEWS_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS` 仍可作为可选环境覆盖；已有环境值优先于配置中的默认值。Compose 未提供这些环境值时也使用同一份 application.yml 默认值。
 
 另需至少一个明确启用、批准并记录许可和生产者的来源：
+
+`live` Profile 已配置美联储公告文本，准入记录为 `fed-board-announcement-text-2026-10-26`，生产者为 `federal-reserve-board`。已核对 [官方转载说明](https://www.federalreserve.gov/disclaimer.htm) 和 [RSS 目录](https://www.federalreserve.gov/feeds/feeds.htm)：保留来源署名与原文链接，范围限 Board 公告正文，不含第三方材料、图片、标识或链接附件。其余来源仍需分别配置。
 
 | 来源 | 必需变量 |
 | --- | --- |
@@ -62,12 +66,12 @@
 - `OPENAI_BASE_URL`：默认 `https://api.openai.com/v1`，只接受 HTTPS，代码追加 `/responses`。
 - `NEWS_DIGEST_ENABLED=true`：启用每日汇总；`NEWS_DIGEST_UTC_HOUR=22`、`NEWS_DIGEST_MAX_ITEMS=5`、`NEWS_DIGEST_MAX_CHARACTERS=3000`。
 - `NEWS_ALERT_ENABLED=true`、`NEWS_ALERT_WEBHOOK_URL`：向指定 HTTPS webhook 发送通用 JSON 告警；可加 `NEWS_ALERT_WEBHOOK_TOKEN` Bearer token，接收端按 `id` 去重。
-- MySQL：`NEWS_DB_URL`、`NEWS_DB_USER`、`NEWS_DB_PASSWORD`；Compose 数据库还需 `NEWS_DB_ROOT_PASSWORD`。
+- MySQL：本地连接配置已在 `application-mysql.yml` 中设置，应用账号和 root 默认密码均为 `123456`。`NEWS_DB_URL`、`NEWS_DB_USER`、`NEWS_DB_PASSWORD` 可选覆盖后端配置；`NEWS_DB_ROOT_PASSWORD` 可选覆盖容器的 root 初始密码。
 - 高级超时、批量与租约见 [.env.example](.env.example)。租约须覆盖对应请求与处理时间。
 
 ## 新闻来源
 
-USGS 默认 significant_day GeoJSON。Fed 拉取 RSS 后读取官方正文，默认 `#article` 选择器，可用 `NEWS_FED_ARTICLE_SELECTOR` 调整。真实网页结构尚待联调；找不到正文会记录失败，不以标题代替证据。
+USGS 默认 significant_day GeoJSON。Fed 拉取 RSS 后读取官方正文，默认 `#article` 选择器，可用 `NEWS_FED_ARTICLE_SELECTOR` 调整；已验证首批 3 条正文提取和入库。找不到正文会记录失败，不以标题代替证据。
 
 `NEWS_RSS_FEEDS_JSON` 是 JSON 数组，下面仅为结构示例，需替换域名和权限记录：
 
@@ -111,13 +115,15 @@ java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar --spring.profiles.active
 
 离线重启/HTTP smoke：`.\scripts\smoke.ps1 -SkipBuild`。LIVE 拒绝固定演示时钟。
 
-首次真实联调使用本地文件数据库（先设置环境变量）：
+首次手动采集使用已启动的本地 MySQL。在 IDE 将 Active profiles 从 `mysql` 改为 `mysql,live` 并重启后端；使用已构建 JAR 时等价命令为：
 
 ```powershell
-java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar --spring.profiles.active=offline,live
+java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar --spring.profiles.active=mysql,live
 ```
 
-专用 MySQL 改为 `mysql,live`，不要加载 demo。`offline` 数据库 profile 只选择 H2；客户端模式由 LIVE profile / NEWS_RUNTIME_MODE 控制。
+重启只在本地注册来源，不自动抓取。通过受保护的 `POST /ops/ingestion/poll` 手动采集，返回结果后查看 `GET /ops/ingestion/inbox`。该步骤不调用 AI 或发帖，也无需解除全局暂停。确认来源正文后，再配置运营策略并启用编辑与发布。
+
+`offline,live` 可选择本地 H2 文件数据库。不要同时加载 demo；`offline` 数据库 Profile 只选择 H2，客户端模式由 LIVE Profile / NEWS_RUNTIME_MODE 控制。已有环境变量优先于上述默认值。此前已被禁用的来源仍需通过 `/ops/sources/{id}/state` 显式开启，修改 YAML 不会自动解除禁用。
 
 ## 运维接口
 
@@ -152,11 +158,53 @@ Telegram UNKNOWN 确认未发送转 FAILED，不自动重发；模型 UNCERTAIN 
 
 ## 部署和恢复
 
-已提供 Dockerfile / compose.yml，尚未运行部署验证。独立 MySQL 8.4 schema、用户和数据卷，不访问 Trade。应用非 root、运维端口仅回环映射。Compose 必填 NEWS_DB_PASSWORD、NEWS_DB_ROOT_PASSWORD、NEWS_OPS_TOKEN；其他变量从环境传入，默认外部开关关闭。
+### 本地 MySQL：Docker 数据库 + 本机 Spring Boot
 
-完成本地和专用 MySQL 验证后可执行 `docker compose up -d --build`。Dockerfile 构建跳过测试，不能替代 verify。
+根目录 `compose.yml` 默认只启动 MySQL 8.4，用法与 Trade 的本地基础设施一致。地址为 `127.0.0.1:3307`，库和用户均为 `global_news_flash`，数据目录为 `A:/DockerData/global-news-flash/mysql`，与 Trade 的端口和目录分开。
 
-备份：`.\scripts\backup-mysql.ps1`，默认 `.tools/backups`，带 SHA256。恢复：先停止 app，再显式执行 `.\scripts\restore-mysql.ps1 -BackupFile <绝对SQL路径>`；恢复后强制暂停并保留审计，不自动启动。脚本本轮只做静态检查，未进行恢复演练。
+本地开发的应用账号和 root 默认密码均为 `123456`，无需额外配置数据库密码环境变量。打开 Docker Desktop，使用本机 Linux containers，然后执行：
+
+```powershell
+cd A:\explore\global_news_flash
+docker compose up -d
+docker compose ps
+```
+
+首次启动创建独立库和用户；等待状态变为 healthy。业务表由后续 Spring Boot 启动时执行 Flyway 迁移创建。查看日志和停止数据库：
+
+```powershell
+docker compose logs --tail 80 db
+docker compose stop
+```
+
+数据保留在上述宿主机目录。已有数据库的密码不能仅通过修改环境变量更新，须在 MySQL 内修改对应用户密码，见 [MySQL 初始化规则](https://hub.docker.com/_/mysql)。
+
+Spring Boot / DataGrip 连接参数：
+
+| 参数 | 值 |
+| --- | --- |
+| Host / Port | `127.0.0.1` / `3307` |
+| Database | `global_news_flash` |
+| User | `global_news_flash` |
+| Password | `123456`（应用账号和 root 相同） |
+
+后端 IDE 的 Active profiles 设置为 `mysql`，连接地址、用户名和密码已在 `application-mysql.yml` 中配置。已有的 `NEWS_DB_PASSWORD`、`NEWS_DB_ROOT_PASSWORD` 环境变量会覆盖默认值；如旧终端或 IDE 仍保留之前的密码，请更新变量或重开进程。首次数据库联调不必启用 LIVE 或自动发帖。
+
+### 可选：后端也放进 Docker
+
+`compose.app.yml` 保存应用容器配置，合并后启动：
+
+```powershell
+docker compose -f compose.yml -f compose.app.yml up -d --build
+```
+
+应用容器连接 `db:3306`；本机后端连接 `127.0.0.1:3307`。两种方式连接同一个本项目 MySQL。应用容器非 root，运维端口仅回环映射，模型/采集/发帖默认仍关闭。完整容器启动还需 `NEWS_OPS_TOKEN`；Dockerfile 构建跳过测试，不能替代后续验证。
+
+本机已验证数据库健康检查、后端启动和首批 Fed 正文采集入库；编辑与发布仍按上面的分阶段流程联调，当前自动任务和发送保持关闭。
+
+### 备份和恢复
+
+备份：`.\scripts\backup-mysql.ps1`，默认 `.tools/backups`，带 SHA256。恢复：先停止本机 IDE 后端和 app 容器，再显式执行 `.\scripts\restore-mysql.ps1 -BackupFile <绝对SQL路径>`；恢复后强制暂停并保留审计，不自动启动。脚本只能检测容器化 app，本机后端需自行停止。备份/恢复脚本仅作为可选工具，不参与日常启动，本批次未进行恢复演练。
 
 ## 当前边界
 

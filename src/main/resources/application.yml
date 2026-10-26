@@ -40,17 +40,20 @@ news:
     token: ${NEWS_OPS_TOKEN:}
   openai:
     api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:}
+    # Non-secret defaults live here. Change the model and both prices together.
+    model: ${OPENAI_MODEL:gpt-6-luna}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
     timeout: ${NEWS_OPENAI_TIMEOUT:45s}
     max-input-characters: ${NEWS_OPENAI_MAX_INPUT_CHARACTERS:24000}
     max-output-tokens: ${NEWS_OPENAI_MAX_OUTPUT_TOKENS:1800}
-    input-micros-per-million-tokens: ${NEWS_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS:0}
-    output-micros-per-million-tokens: ${NEWS_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS:0}
+    # Standard short-context rates in USD millionths per million tokens (2026-10-26).
+    input-micros-per-million-tokens: ${NEWS_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS:100000}
+    output-micros-per-million-tokens: ${NEWS_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS:500000}
   telegram:
     enabled: ${NEWS_TELEGRAM_ENABLED:false}
     bot-token: ${NEWS_TELEGRAM_BOT_TOKEN:}
-    chat-id: ${NEWS_TELEGRAM_CHAT_ID:}
+    # Private test channel; environment override remains optional.
+    chat-id: ${NEWS_TELEGRAM_CHAT_ID:-1004482990261}
     connect-timeout: ${NEWS_TELEGRAM_CONNECT_TIMEOUT:5s}
     request-timeout: ${NEWS_TELEGRAM_REQUEST_TIMEOUT:15s}
   publication:

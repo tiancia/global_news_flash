@@ -43,7 +43,9 @@ final class SyndicationFeedParser {
                 @Override public void fatalError(org.xml.sax.SAXParseException exception) throws SAXException { throw exception; }
             });
             builder.setEntityResolver((publicId, systemId) -> { throw new SAXException("External entities are forbidden"); });
-            Element root = builder.parse(new InputSource(new StringReader(payload))).getDocumentElement();
+            // Decoded XML can retain a BOM; SAX character streams must not include it.
+            String xml = payload.startsWith("\uFEFF") ? payload.substring(1) : payload;
+            Element root = builder.parse(new InputSource(new StringReader(xml))).getDocumentElement();
             if ("true".equals(root.getAttribute("synthetic"))) throw failure();
             if (matches(root, "", "rss") && "2.0".equals(root.getAttribute("version"))) {
                 Element channel = child(root, "", "channel");

@@ -43,7 +43,9 @@ public final class FederalReserveRssAdapter implements SourceAdapter {
                 @Override public void fatalError(org.xml.sax.SAXParseException exception) throws SAXException { throw exception; }
             });
             builder.setEntityResolver((publicId, systemId) -> { throw new SAXException("External entities are forbidden"); });
-            var document = builder.parse(new InputSource(new StringReader(payload)));
+            // Decoded XML can retain a BOM; SAX character streams must not include it.
+            String xml = payload.startsWith("\uFEFF") ? payload.substring(1) : payload;
+            var document = builder.parse(new InputSource(new StringReader(xml)));
             Element rss = document.getDocumentElement();
             if (!"rss".equals(rss.getTagName()) || !"2.0".equals(rss.getAttribute("version"))) {
                 throw new IllegalArgumentException("An RSS document is required");

@@ -91,6 +91,15 @@ class SourceAdapterTest {
     }
 
     @Test
+    void rssAcceptsLeadingUtf8BomFromTheBoardFeed() throws IOException {
+        SourceMaterial material = fed.parse("\uFEFF" + fixture("fed.xml"), discovered, true).getFirst();
+        assertThat(material.sourceId()).isEqualTo("fed");
+        assertThat(material.externalId()).isEqualTo("synthetic-fed-announcement-001");
+        assertThat(material.publishedAt()).isEqualTo(Instant.parse("2026-10-24T01:00:00Z"));
+        assertThat(material.facts()).isEmpty();
+    }
+
+    @Test
     void rssRejectsDtdAndEntitiesWithoutReadingExternalResources() {
         String malicious = """
                 <?xml version="1.0"?>
@@ -99,6 +108,8 @@ class SourceAdapterTest {
                 <link>https://www.federalreserve.gov/test.htm</link></item></channel></rss>
                 """;
         assertThatThrownBy(() -> fed.parse(malicious, discovered, true))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unsafe");
+        assertThatThrownBy(() -> fed.parse("\uFEFF" + malicious, discovered, true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unsafe");
         assertThatThrownBy(() -> fed.parse("<rss><channel>", discovered, true))
                 .isInstanceOf(IllegalArgumentException.class);

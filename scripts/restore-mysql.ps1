@@ -22,7 +22,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
-$dockerCommand = (Get-Command docker -CommandType Application -ErrorAction Stop).Source
+$dockerCommand = (Get-Command docker.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $composePath = (Resolve-Path -LiteralPath $ComposeFile -ErrorAction Stop).ProviderPath
 $backupPath = (Resolve-Path -LiteralPath $BackupFile -ErrorAction Stop).ProviderPath
 $backupItem = Get-Item -LiteralPath $backupPath
@@ -50,7 +50,8 @@ $checkInfo.UseShellExecute = $false
 $checkInfo.CreateNoWindow = $true
 $checkInfo.RedirectStandardOutput = $true
 $checkInfo.RedirectStandardError = $true
-foreach ($argument in ($composeArguments + @('ps', '--status', 'running', '--quiet', 'app'))) {
+foreach ($argument in @('ps', '--filter', ('label=com.docker.compose.project=' + $ProjectName),
+        '--filter', 'label=com.docker.compose.service=app', '--quiet')) {
     $checkInfo.ArgumentList.Add($argument)
 }
 $check = [Diagnostics.Process]::new()
