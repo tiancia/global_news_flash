@@ -33,8 +33,91 @@ mybatis:
     arg-name-based-constructor-auto-mapping: true
 news:
   runtime:
-    mode: OFFLINE
-    external-enabled: false
+    mode: ${NEWS_RUNTIME_MODE:OFFLINE}
+    external-enabled: ${NEWS_EXTERNAL_ENABLED:false}
     preferred-provider: openai
   ops:
     token: ${NEWS_OPS_TOKEN:}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    timeout: ${NEWS_OPENAI_TIMEOUT:45s}
+    max-input-characters: ${NEWS_OPENAI_MAX_INPUT_CHARACTERS:24000}
+    max-output-tokens: ${NEWS_OPENAI_MAX_OUTPUT_TOKENS:1800}
+    input-micros-per-million-tokens: ${NEWS_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS:0}
+    output-micros-per-million-tokens: ${NEWS_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS:0}
+  telegram:
+    enabled: ${NEWS_TELEGRAM_ENABLED:false}
+    bot-token: ${NEWS_TELEGRAM_BOT_TOKEN:}
+    chat-id: ${NEWS_TELEGRAM_CHAT_ID:}
+    connect-timeout: ${NEWS_TELEGRAM_CONNECT_TIMEOUT:5s}
+    request-timeout: ${NEWS_TELEGRAM_REQUEST_TIMEOUT:15s}
+  publication:
+    worker-enabled: ${NEWS_PUBLICATION_WORKER_ENABLED:false}
+    worker-delay-ms: ${NEWS_PUBLICATION_WORKER_DELAY_MS:5000}
+    lease: ${NEWS_PUBLICATION_LEASE:2m}
+    max-attempts: ${NEWS_PUBLICATION_MAX_ATTEMPTS:3}
+    max-per-hour: ${NEWS_PUBLICATION_MAX_PER_HOUR:6}
+    max-per-day: ${NEWS_PUBLICATION_MAX_PER_DAY:24}
+    minimum-interval: ${NEWS_PUBLICATION_MINIMUM_INTERVAL:5m}
+  automation:
+    enabled: ${NEWS_AUTOMATION_ENABLED:false}
+    delay-ms: ${NEWS_AUTOMATION_DELAY_MS:60000}
+    initial-delay-ms: ${NEWS_AUTOMATION_INITIAL_DELAY_MS:10000}
+    policy-ready: ${NEWS_POLICY_READY:false}
+    policy-version: ${NEWS_POLICY_VERSION:initial-v1}
+    max-age: ${NEWS_MAX_AGE:12h}
+    max-characters: ${NEWS_MAX_CHARACTERS:3000}
+    minimum-independent-chains: ${NEWS_MINIMUM_INDEPENDENT_CHAINS:1}
+    allowed-topics: ${NEWS_ALLOWED_TOPICS:EARTHQUAKE,OFFICIAL_ANNOUNCEMENT,WORLD,ECONOMY,SCIENCE,TECHNOLOGY}
+    batch-size: ${NEWS_AUTOMATION_BATCH_SIZE:10}
+    daily-budget-micros: ${NEWS_DAILY_BUDGET_MICROS:1000000}
+    daily-requests: ${NEWS_DAILY_REQUESTS:100}
+    job-lease: ${NEWS_EDITOR_JOB_LEASE:3m}
+    cycle-lease: ${NEWS_CYCLE_LEASE:15m}
+    revision-mode: ${NEWS_REVISION_MODE:HOLD}
+  digest:
+    enabled: ${NEWS_DIGEST_ENABLED:false}
+    utc-hour: ${NEWS_DIGEST_UTC_HOUR:22}
+    max-items: ${NEWS_DIGEST_MAX_ITEMS:5}
+    max-characters: ${NEWS_DIGEST_MAX_CHARACTERS:3000}
+  alert:
+    enabled: ${NEWS_ALERT_ENABLED:false}
+    webhook-url: ${NEWS_ALERT_WEBHOOK_URL:}
+    webhook-token: ${NEWS_ALERT_WEBHOOK_TOKEN:}
+    timeout: ${NEWS_ALERT_TIMEOUT:10s}
+    delay-ms: ${NEWS_ALERT_DELAY_MS:60000}
+  ingestion:
+    enabled: ${NEWS_INGESTION_ENABLED:false}
+    poll-delay-ms: ${NEWS_INGESTION_POLL_DELAY_MS:60000}
+    source-poll-interval-ms: ${NEWS_SOURCE_POLL_INTERVAL_MS:300000}
+    max-sources-per-poll: ${NEWS_MAX_SOURCES_PER_POLL:10}
+    max-items-per-source: ${NEWS_MAX_ITEMS_PER_SOURCE:20}
+    max-response-bytes: ${NEWS_SOURCE_MAX_RESPONSE_BYTES:1000000}
+    max-body-characters: ${NEWS_MAX_BODY_CHARACTERS:16000}
+    minimum-body-characters: ${NEWS_MINIMUM_BODY_CHARACTERS:200}
+    request-timeout-seconds: ${NEWS_SOURCE_REQUEST_TIMEOUT_SECONDS:15}
+    source-lease-seconds: ${NEWS_SOURCE_LEASE_SECONDS:900}
+    inbox-lease-seconds: ${NEWS_INBOX_LEASE_SECONDS:900}
+    max-pending-items: ${NEWS_MAX_PENDING_ITEMS:2000}
+    rss-feeds-json: ${NEWS_RSS_FEEDS_JSON:[]}
+    usgs:
+      enabled: ${NEWS_USGS_ENABLED:false}
+      approved: ${NEWS_USGS_APPROVED:false}
+      license-version: ${NEWS_USGS_LICENSE_VERSION:pending}
+      permitted-producers: ${NEWS_USGS_PERMITTED_PRODUCERS:}
+      url: ${NEWS_USGS_URL:https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson}
+    fed:
+      enabled: ${NEWS_FED_ENABLED:false}
+      approved: ${NEWS_FED_APPROVED:false}
+      license-version: ${NEWS_FED_LICENSE_VERSION:pending}
+      permitted-producers: ${NEWS_FED_PERMITTED_PRODUCERS:}
+      url: ${NEWS_FED_URL:https://www.federalreserve.gov/feeds/press_all.xml}
+      article-selector: ${NEWS_FED_ARTICLE_SELECTOR:#article}
+    gdelt:
+      enabled: ${NEWS_GDELT_ENABLED:false}
+      approved: ${NEWS_GDELT_APPROVED:false}
+      license-version: ${NEWS_GDELT_LICENSE_VERSION:pending}
+      permitted-producers: ${NEWS_GDELT_PERMITTED_PRODUCERS:}
+      url: ${NEWS_GDELT_URL:}

@@ -2,6 +2,7 @@ package com.globalnewsflash.automation.application;
 
 import com.globalnewsflash.automation.infrastructure.PipelineMapper;
 import com.globalnewsflash.automation.infrastructure.PipelineMapper.EventVersion;
+import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
 import com.globalnewsflash.editorial.application.EditorialService;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.editorial.domain.EditorialResult;
@@ -33,15 +34,17 @@ public class PipelineService {
     private final JsonMapper json;
     private final Clock clock;
     private final BudgetService budgets;
+    private final RuntimeProperties runtime;
 
     public PipelineService(PipelineMapper mapper, EditorialService editorial, PublicationService publication,
-                           JsonMapper json, Clock clock, BudgetService budgets) {
+                           JsonMapper json, Clock clock, BudgetService budgets, RuntimeProperties runtime) {
         this.mapper = mapper;
         this.editorial = editorial;
         this.publication = publication;
         this.json = json;
         this.clock = clock;
         this.budgets = budgets;
+        this.runtime = runtime;
     }
 
     public record PipelineRun(String eventKey, int eventVersion, String state, List<String> reasons,
@@ -143,7 +146,10 @@ public class PipelineService {
     public void setSourceEnabled(String id, boolean enabled) {
         var source = sources().stream().filter(s -> s.id().equals(id)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown source"));
-        if (enabled && !source.synthetic()) throw new IllegalArgumentException("Real sources cannot be enabled in this build");
+        if (enabled && !source.synthetic() && (!runtime.live() || !source.approved()
+                || source.licenseVersion().isBlank() || "pending".equals(source.licenseVersion())
+                || source.permittedProducers().isBlank()))
+            throw new IllegalArgumentException("Real sources require live mode, approval, license and permitted producers");
         mapper.enableSource(id, enabled);
         audit(enabled ? "SOURCE_ENABLED" : "SOURCE_DISABLED", id, "operator action");
     }

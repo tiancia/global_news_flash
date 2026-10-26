@@ -2,6 +2,7 @@ package com.globalnewsflash.automation.application;
 
 import com.globalnewsflash.automation.infrastructure.PipelineMapper;
 import com.globalnewsflash.editorial.application.EditorialService;
+import com.globalnewsflash.digest.application.DigestPublicationGuard;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.editorial.domain.EditorialResult;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
@@ -24,13 +25,17 @@ public class EvidencePublicationGuard implements PublicationGuard {
     private final EditorialService editorial;
     private final JsonMapper json;
     private final BudgetService budgets;
+    private final DigestPublicationGuard digest;
 
-    public EvidencePublicationGuard(PipelineMapper mapper, EditorialService editorial, JsonMapper json, BudgetService budgets) {
+    public EvidencePublicationGuard(PipelineMapper mapper, EditorialService editorial, JsonMapper json, BudgetService budgets,
+                                    DigestPublicationGuard digest) {
         this.mapper = mapper; this.editorial = editorial; this.json = json; this.budgets = budgets;
+        this.digest = digest;
     }
 
     @Override
     public List<String> rejectionReasons(PublicationOperation operation) {
+        if (digest.handles(operation)) return digest.rejectionReasons(operation);
         var version = mapper.findNumber(operation.eventKey(), operation.eventVersion());
         if (version == null || !"ELIGIBLE".equals(version.editorialState())) return List.of("NO_ELIGIBLE_EVIDENCE");
         var reservation = version.budgetReservationId() == null ? null : budgets.get(version.budgetReservationId());
@@ -39,9 +44,9 @@ public class EvidencePublicationGuard implements PublicationGuard {
             return List.of("EVENT_VERSION_SUPERSEDED");
         }
         var originalDecision = json.readValue(version.decisionPayload(), EditorialResult.class);
-        // SEND body is immutable and must be exactly the validated draft. Other operation types
-        // need a separately reviewed amendment contract and are currently rejected by this guard.
-        if (!"SEND".equals(operation.kind()) || !operation.body().equals(originalDecision.draft().body())
+        // Every body is immutable and must match its validated draft. Live amendments additionally
+        // require an original confirmed message and the explicit operating revision mode.
+        if ((operation.synthetic() && !"SEND".equals(operation.kind())) || !operation.body().equals(originalDecision.draft().body())
                 || !Objects.equals(version.publicationId(), operation.id())) return List.of("OPERATION_CONTRACT_MISMATCH");
         List<SourceMaterial> materials = Arrays.asList(json.readValue(version.materialsPayload(), SourceMaterial[].class));
         var policy = json.readValue(version.policyPayload(), EditorialPolicy.class);
@@ -52,6 +57,6 @@ public class EvidencePublicationGuard implements PublicationGuard {
         var previousSources = Arrays.asList(json.readValue(version.sourcesPayload(), SourcePolicy[].class));
         if (previousSources.stream().anyMatch(previous -> sources.stream()
                 .noneMatch(current -> previous.equals(current)))) return List.of("SOURCE_POLICY_CHANGED");
-        return editorial.evaluate(materials, sources, policy).reasons();
+        return editorial.validateStoredDraft(materials, sources, policy, originalDecision.draft());
     }
 }

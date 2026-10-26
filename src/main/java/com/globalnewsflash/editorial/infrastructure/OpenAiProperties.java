@@ -1,0 +1,94 @@
+package com.globalnewsflash.editorial.infrastructure;
+
+import com.globalnewsflash.editorial.application.EditorFailure;
+import com.globalnewsflash.editorial.domain.EditorResponse;
+import java.math.BigInteger;
+import java.net.URI;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/** All secrets are supplied externally. Prices are explicit operator inputs in USD millionths. */
+@ConfigurationProperties("news.openai")
+public class OpenAiProperties {
+    private String apiKey = "";
+    private String model = "";
+    private String baseUrl = "https://api.openai.com/v1";
+    private Duration timeout = Duration.ofSeconds(45);
+    private int maxInputCharacters = 24_000;
+    private int maxOutputTokens = 1_800;
+    private long inputMicrosPerMillionTokens;
+    private long outputMicrosPerMillionTokens;
+
+    public List<String> readinessReasons() {
+        var reasons = new ArrayList<String>();
+        if (apiKey == null || apiKey.isBlank() || apiKey.indexOf('\r') >= 0 || apiKey.indexOf('\n') >= 0) {
+            reasons.add("OPENAI_KEY_MISSING_OR_INVALID");
+        }
+        if (model == null || !model.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) reasons.add("OPENAI_MODEL_NOT_CONFIGURED");
+        try { endpoint(); } catch (RuntimeException invalid) { reasons.add("OPENAI_ENDPOINT_INVALID"); }
+        if (timeout == null || timeout.compareTo(Duration.ofSeconds(1)) < 0
+                || timeout.compareTo(Duration.ofMinutes(3)) > 0) reasons.add("OPENAI_TIMEOUT_INVALID");
+        if (maxInputCharacters < 1_000 || maxInputCharacters > 100_000
+                || maxOutputTokens < 256 || maxOutputTokens > 16_000) reasons.add("OPENAI_TOKEN_LIMIT_INVALID");
+        if (inputMicrosPerMillionTokens <= 0 || outputMicrosPerMillionTokens <= 0) reasons.add("OPENAI_PRICES_NOT_CONFIGURED");
+        return List.copyOf(reasons);
+    }
+
+    public void validateForCall() {
+        var reasons = readinessReasons();
+        if (!reasons.isEmpty()) throw new EditorFailure(reasons.getFirst(), false);
+    }
+
+    public URI endpoint() {
+        URI base = URI.create(baseUrl == null ? "" : baseUrl);
+        if (!"https".equalsIgnoreCase(base.getScheme()) || base.getHost() == null || base.getUserInfo() != null
+                || base.getQuery() != null || base.getFragment() != null
+                || (base.getPort() != -1 && base.getPort() != 443)) {
+            throw new IllegalArgumentException("Invalid OpenAI endpoint");
+        }
+        return URI.create(base.toASCIIString().replaceAll("/+$", "") + "/responses");
+    }
+
+    /** One token per UTF-8 byte is deliberately conservative; overhead also covers prompt/schema. */
+    public long estimatedRequestMicros() {
+        if (maxInputCharacters < 0 || maxOutputTokens < 0 || inputMicrosPerMillionTokens <= 0
+                || outputMicrosPerMillionTokens <= 0) throw new EditorFailure("OPENAI_PRICES_NOT_CONFIGURED", false);
+        long maximumInputTokens = Math.addExact(Math.multiplyExact((long) maxInputCharacters, 4L), 65_536L);
+        return price(maximumInputTokens, maxOutputTokens);
+    }
+
+    public long actualMicros(EditorResponse.Usage usage) {
+        if (usage == null || usage.estimated()) throw new EditorFailure("OPENAI_USAGE_UNKNOWN", true);
+        return price(usage.inputTokens(), usage.outputTokens());
+    }
+
+    private long price(long inputTokens, long outputTokens) {
+        if (inputMicrosPerMillionTokens <= 0 || outputMicrosPerMillionTokens <= 0) {
+            throw new EditorFailure("OPENAI_PRICES_NOT_CONFIGURED", false);
+        }
+        BigInteger numerator = BigInteger.valueOf(inputTokens).multiply(BigInteger.valueOf(inputMicrosPerMillionTokens))
+                .add(BigInteger.valueOf(outputTokens).multiply(BigInteger.valueOf(outputMicrosPerMillionTokens)));
+        return numerator.add(BigInteger.valueOf(999_999L)).divide(BigInteger.valueOf(1_000_000L)).longValueExact();
+    }
+
+    public String getApiKey() { return apiKey; }
+    public void setApiKey(String value) { apiKey = value; }
+    public String getModel() { return model; }
+    public void setModel(String value) { model = value; }
+    public String getBaseUrl() { return baseUrl; }
+    public void setBaseUrl(String value) { baseUrl = value; }
+    public Duration getTimeout() { return timeout; }
+    public Duration getRequestTimeout() { return timeout; }
+    public void setRequestTimeout(Duration value) { timeout = value; }
+    public void setTimeout(Duration value) { timeout = value; }
+    public int getMaxInputCharacters() { return maxInputCharacters; }
+    public void setMaxInputCharacters(int value) { maxInputCharacters = value; }
+    public int getMaxOutputTokens() { return maxOutputTokens; }
+    public void setMaxOutputTokens(int value) { maxOutputTokens = value; }
+    public long getInputMicrosPerMillionTokens() { return inputMicrosPerMillionTokens; }
+    public void setInputMicrosPerMillionTokens(long value) { inputMicrosPerMillionTokens = value; }
+    public long getOutputMicrosPerMillionTokens() { return outputMicrosPerMillionTokens; }
+    public void setOutputMicrosPerMillionTokens(long value) { outputMicrosPerMillionTokens = value; }
+}

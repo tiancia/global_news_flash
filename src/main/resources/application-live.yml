@@ -1,0 +1,6 @@
+# Combine with offline (local file database) or mysql (dedicated production schema).
+# No client is called by activating this profile alone.
+news:
+  runtime:
+    mode: LIVE
+    external-enabled: ${NEWS_EXTERNAL_ENABLED:false}

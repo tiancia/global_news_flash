@@ -4,9 +4,11 @@ import com.globalnewsflash.editorial.application.EditorPort;
 import com.globalnewsflash.editorial.domain.EditorRequest;
 import com.globalnewsflash.editorial.domain.EditorResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /** Deterministic fixture editor. It makes no claims about real model quality or semantic verification. */
 @Component
+@ConditionalOnProperty(name = "news.runtime.mode", havingValue = "OFFLINE", matchIfMissing = true)
 public final class SyntheticEditor implements EditorPort {
     @Override
     public EditorResponse edit(EditorRequest request) {

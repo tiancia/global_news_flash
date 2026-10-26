@@ -1,0 +1,16 @@
+.git
+.idea
+.tools
+target
+data
+backups
+**/backups
+.env
+.env.*
+**/.env
+**/.env.*
+*.key
+*.pem
+*.log
+README.md
+scripts

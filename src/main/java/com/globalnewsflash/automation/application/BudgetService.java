@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
 
-/** Offline accounting primitives. Periods and conservative limits are explicit, never inferred prices. */
+/** Durable accounting. Limits and model prices are explicit, never inferred. */
 @Service
 @Transactional(isolation = Isolation.READ_COMMITTED)
 public class BudgetService {
@@ -20,6 +20,11 @@ public class BudgetService {
 
     @Transactional
     public void configureSyntheticPeriod(String id, long maxMicros, int maxRequests) {
+        configurePeriod(id, maxMicros, maxRequests);
+    }
+
+    @Transactional
+    public void configurePeriod(String id, long maxMicros, int maxRequests) {
         requireId(id);
         if (maxMicros < 0 || maxRequests < 0) throw new IllegalArgumentException("Budget limits cannot be negative");
         try { mapper.create(id, maxMicros, maxRequests); }
@@ -106,6 +111,16 @@ public class BudgetService {
 
     public List<BudgetMapper.BudgetPeriod> report() { return List.copyOf(mapper.periods()); }
     public Reservation get(String id) { return mapper.find(id); }
+
+    /** Explicit operator reconciliation may exceed an estimate; future reservations still honor the cap. */
+    @Transactional
+    public void reconcileUncertain(String id, long actualMicros) {
+        var reservation = locked(id);
+        requireState(reservation, "UNCERTAIN");
+        if (actualMicros < 0) throw new IllegalArgumentException("Actual cost cannot be negative");
+        mapper.finish(reservation.periodId(), reservation.amountMicros(), actualMicros, 0);
+        mapper.state(id, "SETTLED", actualMicros);
+    }
 
     private Reservation locked(String id) {
         requireId(id);

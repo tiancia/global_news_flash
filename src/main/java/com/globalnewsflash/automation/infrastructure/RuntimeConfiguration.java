@@ -10,7 +10,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class RuntimeConfiguration {
     @Bean
-    Clock clock(@Value("${news.clock.fixed:}") String fixed) {
+    Clock clock(@Value("${news.clock.fixed:}") String fixed, RuntimeProperties runtime) {
+        if ("LIVE".equals(runtime.getMode()) && !fixed.isBlank())
+            throw new IllegalStateException("LIVE mode cannot use a fixed demonstration clock");
         return fixed.isBlank() ? Clock.systemUTC() : Clock.fixed(Instant.parse(fixed), ZoneOffset.UTC);
     }
 }

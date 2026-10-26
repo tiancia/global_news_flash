@@ -5,9 +5,13 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class RuntimePropertiesTest {
-    @Test void liveModeCannotBeEnabled() {
+    @Test void liveModeWithoutExternalSwitchDoesNotActivateClients() {
         var properties = new RuntimeProperties(); properties.setMode("LIVE");
-        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class);
+        properties.validate();
+        assertThat(properties.live()).isFalse();
+        properties.setExternalEnabled(true);
+        properties.validate();
+        assertThat(properties.live()).isTrue();
     }
     @Test void externalFlagCannotTurnOnClients() {
         var properties = new RuntimeProperties(); properties.setExternalEnabled(true);

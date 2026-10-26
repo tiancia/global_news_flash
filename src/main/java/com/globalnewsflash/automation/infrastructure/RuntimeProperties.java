@@ -3,7 +3,7 @@ package com.globalnewsflash.automation.infrastructure;
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** This development build deliberately has no live adapter or live execution mode. */
+/** External clients require both LIVE mode and an explicit external-access switch. */
 @ConfigurationProperties("news.runtime")
 public class RuntimeProperties {
     private String mode = "OFFLINE";
@@ -12,8 +12,11 @@ public class RuntimeProperties {
 
     @PostConstruct
     public void validate() {
-        if (!"OFFLINE".equals(mode) || externalEnabled) {
-            throw new IllegalStateException("This build supports OFFLINE mode only; external access is unavailable");
+        if (!"OFFLINE".equals(mode) && !"LIVE".equals(mode)) {
+            throw new IllegalStateException("NEWS_RUNTIME_MODE must be OFFLINE or LIVE");
+        }
+        if ("OFFLINE".equals(mode) && externalEnabled) {
+            throw new IllegalStateException("External access requires LIVE mode");
         }
     }
 
@@ -23,4 +26,5 @@ public class RuntimeProperties {
     public void setExternalEnabled(boolean externalEnabled) { this.externalEnabled = externalEnabled; }
     public String getPreferredProvider() { return preferredProvider; }
     public void setPreferredProvider(String preferredProvider) { this.preferredProvider = preferredProvider; }
+    public boolean live() { return "LIVE".equals(mode) && externalEnabled; }
 }

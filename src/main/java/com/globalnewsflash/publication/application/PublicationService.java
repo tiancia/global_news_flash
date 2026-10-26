@@ -6,8 +6,11 @@ import com.globalnewsflash.publication.domain.PublicationAlert;
 import com.globalnewsflash.publication.domain.PublicationResolution;
 import com.globalnewsflash.publication.infrastructure.PublicationMapper;
 import com.globalnewsflash.publication.infrastructure.PublicationProperties;
+import com.globalnewsflash.publication.infrastructure.TelegramProperties;
+import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Objects;
@@ -15,6 +18,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -33,23 +37,37 @@ public class PublicationService {
     private final TransactionTemplate transactions;
     private final TransactionTemplate enqueueTransactions;
     private final List<PublicationGuard> guards;
+    private final RuntimeProperties runtime;
+    private final TelegramProperties telegram;
 
     public PublicationService(PublicationMapper mapper, DeliveryGateway gateway, Clock clock,
             PublicationProperties properties, PlatformTransactionManager transactionManager,
             List<PublicationGuard> guards) {
+        this(mapper, gateway, clock, properties, transactionManager, guards,
+                new RuntimeProperties(), new TelegramProperties());
+    }
+
+    @Autowired
+    public PublicationService(PublicationMapper mapper, DeliveryGateway gateway, Clock clock,
+            PublicationProperties properties, PlatformTransactionManager transactionManager,
+            List<PublicationGuard> guards, RuntimeProperties runtime, TelegramProperties telegram) {
         this.mapper = mapper;
         this.gateway = gateway;
         this.clock = clock;
         this.properties = properties;
         this.guards = List.copyOf(guards);
+        this.runtime = runtime;
+        this.telegram = telegram;
         this.transactions = new TransactionTemplate(transactionManager);
         // Enqueue joins the pipeline transaction so the event version and its task commit atomically.
         this.enqueueTransactions = new TransactionTemplate(transactionManager);
         // An outer application transaction must not postpone committing SENDING until after delivery.
         this.transactions.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
         if (properties.getLease() == null || properties.getLease().isNegative()
-                || properties.getLease().isZero() || properties.getMaxAttempts() < 1) {
-            throw new IllegalArgumentException("Invalid offline publication retry/lease configuration");
+                || properties.getLease().isZero() || properties.getMaxAttempts() < 1
+                || properties.getMaxPerHour() < 1 || properties.getMaxPerDay() < 1
+                || properties.getMinimumInterval() == null || properties.getMinimumInterval().isNegative()) {
+            throw new IllegalArgumentException("Invalid publication retry, lease or cadence configuration");
         }
     }
 
@@ -61,15 +79,16 @@ public class PublicationService {
         if (eventVersion < 1 || kind == null || !KINDS.contains(kind)) {
             throw new IllegalArgumentException("Invalid event version or publication kind");
         }
-        if (!synthetic) {
-            throw new IllegalArgumentException("Real publication is unavailable in this offline implementation");
+        requireMode(synthetic);
+        if (!synthetic && !target.equals(telegram.getChatId())) {
+            throw new IllegalArgumentException("Real publication target must match the configured Telegram channel");
         }
         if ("SEND".equals(kind) != (originalOperationId == null)) {
             throw new IllegalArgumentException("Updates, edits and corrections require an original operation");
         }
         PublicationOperation operation = new PublicationOperation(UUID.randomUUID().toString(),
                 eventKey, eventVersion, target, kind, "PENDING", body, originalOperationId,
-                null, 0, null, null, null, null, true);
+                null, 0, null, null, null, null, synthetic);
         return enqueueTransactions.execute(status -> {
             validateOriginal(operation);
             try {
@@ -110,6 +129,7 @@ public class PublicationService {
     public List<PublicationAlert> alerts() {
         return List.copyOf(mapper.alerts());
     }
+    public List<PublicationAlert> unnotifiedAlerts() { return List.copyOf(mapper.unnotifiedAlerts()); }
 
     public List<PublicationResolution> resolutions(String id) {
         get(id);
@@ -159,12 +179,13 @@ public class PublicationService {
         });
     }
 
-    /** A bounded offline worker iteration. Pausing prevents delivery but not crash recovery. */
+    /** A bounded worker iteration. Pausing prevents delivery but not crash recovery. */
     public int processDueBatch() {
         recoverExpired();
         if (isPaused()) {
             return 0;
         }
+        if ("LIVE".equals(runtime.getMode()) && !telegram.isEnabled()) return 0;
         int processed = 0;
         for (PublicationOperation operation : mapper.due(clock.instant())) {
             try {
@@ -193,7 +214,9 @@ public class PublicationService {
     }
 
     public PublicationOperation dispatch(String id) {
-        get(id);
+        PublicationOperation requested = get(id);
+        // Disabled delivery preserves preview tasks for later enablement without claiming or cancelling them.
+        if (!requested.synthetic() && !telegram.isEnabled()) return requested;
         String token = UUID.randomUUID().toString();
         boolean claimed = Boolean.TRUE.equals(transactions.execute(status -> {
             if (mapper.lockPaused()) {
@@ -212,6 +235,7 @@ public class PublicationService {
                 return null;
             }
             PublicationOperation claimedOperation = get(id);
+            requireMode(claimedOperation.synthetic());
             List<String> rejections = guardRejections(claimedOperation);
             if (!rejections.isEmpty()) {
                 if (mapper.cancelClaim(id, token) == 1) {
@@ -222,13 +246,18 @@ public class PublicationService {
                 return null;
             }
             Instant now = clock.instant();
+            if (!claimedOperation.synthetic()) {
+                Instant retryAt = reserveCadence(claimedOperation.target(), now);
+                if (retryAt != null) {
+                    mapper.deferClaim(id, token, retryAt);
+                    return null;
+                }
+            }
             if (mapper.beginSending(id, token, now) != 1) {
                 return null;
             }
             PublicationOperation snapshot = get(id);
-            if (!snapshot.synthetic()) {
-                throw new IllegalStateException("Real operation cannot cross the offline gateway");
-            }
+            requireMode(snapshot.synthetic());
             mapper.insertAttempt(new DeliveryAttempt(UUID.randomUUID().toString(), id,
                     snapshot.attempts(), token, now, null, "SENDING", null));
             return snapshot;
@@ -283,6 +312,7 @@ public class PublicationService {
                         ? get(operation.originalOperationId()).messageId() : result.messageId();
             }
             case RATE_LIMITED -> {
+                if (!operation.synthetic()) mapper.coolDownChannel(operation.target(), now.plus(result.retryAfter()));
                 if (operation.attempts() >= properties.getMaxAttempts()) {
                     state = "FAILED";
                     error = "RETRY_LIMIT_REACHED";
@@ -327,9 +357,44 @@ public class PublicationService {
         PublicationOperation original = get(operation.originalOperationId());
         if (!"SENT".equals(original.state()) || original.messageId() == null
                 || !original.target().equals(operation.target())
-                || !original.eventKey().equals(operation.eventKey()) || !original.synthetic()) {
+                || !original.eventKey().equals(operation.eventKey())
+                || original.synthetic() != operation.synthetic()) {
             throw new IllegalArgumentException("Original operation must be a sent message for the same event and target");
         }
+    }
+
+    private void requireMode(boolean synthetic) {
+        boolean live = "LIVE".equals(runtime.getMode()) && runtime.isExternalEnabled();
+        if (synthetic && (!"OFFLINE".equals(runtime.getMode()) || runtime.isExternalEnabled()))
+            throw new IllegalArgumentException("Synthetic publication requires OFFLINE mode");
+        if (!synthetic && !live)
+            throw new IllegalArgumentException("Real publication requires LIVE mode and enabled external access");
+    }
+
+    /** Called while the pause-control lock is held; the durable target row serializes all send attempts. */
+    private Instant reserveCadence(String target, Instant now) {
+        long hour = now.truncatedTo(ChronoUnit.HOURS).getEpochSecond();
+        long day = now.truncatedTo(ChronoUnit.DAYS).getEpochSecond();
+        PublicationMapper.ChannelLimit current = mapper.lockChannelLimit(target);
+        if (current == null) {
+            mapper.insertChannelLimit(target, hour, day, now);
+            current = mapper.lockChannelLimit(target);
+        }
+        int hourCount = current.hourStart() == hour ? current.hourCount() : 0;
+        int dayCount = current.dayStart() == day ? current.dayCount() : 0;
+        Instant retry = current.nextAllowedAt().isAfter(now) ? current.nextAllowedAt() : null;
+        if (hourCount >= properties.getMaxPerHour()) {
+            Instant nextHour = Instant.ofEpochSecond(hour).plus(1, ChronoUnit.HOURS);
+            retry = retry == null || nextHour.isAfter(retry) ? nextHour : retry;
+        }
+        if (dayCount >= properties.getMaxPerDay()) {
+            Instant nextDay = Instant.ofEpochSecond(day).plus(1, ChronoUnit.DAYS);
+            retry = retry == null || nextDay.isAfter(retry) ? nextDay : retry;
+        }
+        if (retry != null) return retry;
+        mapper.saveChannelLimit(new PublicationMapper.ChannelLimit(target, hour, hourCount + 1,
+                day, dayCount + 1, now.plus(properties.getMinimumInterval())));
+        return null;
     }
 
     private List<String> guardRejections(PublicationOperation operation) {

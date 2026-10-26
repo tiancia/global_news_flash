@@ -14,6 +14,8 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface PublicationMapper {
+    record ChannelLimit(String target, long hourStart, int hourCount, long dayStart,
+            int dayCount, Instant nextAllowedAt) {}
     String COLUMNS = "id,event_key,event_version,target,kind,state,body,original_operation_id,"
             + "message_id,attempts,lease_token,lease_until,next_attempt_at,last_error,synthetic";
 
@@ -67,6 +69,28 @@ public interface PublicationMapper {
     @Update("UPDATE publication_operation SET state='PENDING',lease_token=NULL,lease_until=NULL "
             + "WHERE id=#{id} AND state='CLAIMED' AND lease_token=#{token}")
     int releaseClaim(@Param("id") String id, @Param("token") String token);
+
+    @Update("UPDATE publication_operation SET state='RETRY_WAIT',next_attempt_at=#{retryAt},"
+            + "last_error='PUBLICATION_CADENCE_WAIT',lease_token=NULL,lease_until=NULL "
+            + "WHERE id=#{id} AND state='CLAIMED' AND lease_token=#{token}")
+    int deferClaim(@Param("id") String id, @Param("token") String token, @Param("retryAt") Instant retryAt);
+
+    @Select("SELECT target,hour_start,hour_count,day_start,day_count,next_allowed_at "
+            + "FROM publication_channel_limit WHERE target=#{target} FOR UPDATE")
+    ChannelLimit lockChannelLimit(String target);
+
+    @Insert("INSERT INTO publication_channel_limit(target,hour_start,hour_count,day_start,day_count,next_allowed_at) "
+            + "VALUES(#{target},#{hourStart},0,#{dayStart},0,#{now})")
+    int insertChannelLimit(@Param("target") String target, @Param("hourStart") long hourStart,
+            @Param("dayStart") long dayStart, @Param("now") Instant now);
+
+    @Update("UPDATE publication_channel_limit SET hour_start=#{hourStart},hour_count=#{hourCount},"
+            + "day_start=#{dayStart},day_count=#{dayCount},next_allowed_at=#{nextAllowedAt} WHERE target=#{target}")
+    int saveChannelLimit(ChannelLimit limit);
+
+    @Update("UPDATE publication_channel_limit SET next_allowed_at=CASE WHEN next_allowed_at<#{until} "
+            + "THEN #{until} ELSE next_allowed_at END WHERE target=#{target}")
+    int coolDownChannel(@Param("target") String target, @Param("until") Instant until);
 
     @Update("UPDATE publication_operation SET state='CANCELLED',last_error='ELIGIBILITY_REVOKED',"
             + "lease_token=NULL,lease_until=NULL WHERE id=#{id} AND state='CLAIMED' AND lease_token=#{token}")
@@ -124,6 +148,10 @@ public interface PublicationMapper {
     @Select("SELECT id,operation_id,category,reason_code,created_at,acknowledged_at "
             + "FROM publication_alert ORDER BY created_at,id")
     List<PublicationAlert> alerts();
+    @Select("SELECT a.id,a.operation_id,a.category,a.reason_code,a.created_at,a.acknowledged_at FROM publication_alert a "
+            + "WHERE a.acknowledged_at IS NULL AND NOT EXISTS (SELECT 1 FROM ops_notification n WHERE n.id=a.id) "
+            + "ORDER BY a.created_at,a.id LIMIT 100")
+    List<PublicationAlert> unnotifiedAlerts();
 
     @Update("UPDATE publication_alert SET acknowledged_at=#{now} "
             + "WHERE operation_id=#{id} AND acknowledged_at IS NULL")

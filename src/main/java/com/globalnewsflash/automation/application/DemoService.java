@@ -5,6 +5,7 @@ import com.globalnewsflash.growth.application.GrowthService;
 import com.globalnewsflash.ingestion.application.SourceAdapter;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -26,14 +27,17 @@ public class DemoService {
     private final GrowthService growth;
     private final BudgetService budgets;
     private final Clock clock;
+    private final RuntimeProperties runtime;
 
     public DemoService(PipelineService pipeline, PublicationService publication, List<SourceAdapter> adapters,
-                       GrowthService growth, BudgetService budgets, Clock clock) {
+                       GrowthService growth, BudgetService budgets, Clock clock, RuntimeProperties runtime) {
         this.pipeline = pipeline; this.publication = publication; this.adapters = List.copyOf(adapters);
         this.growth = growth; this.budgets = budgets; this.clock = clock;
+        this.runtime = runtime;
     }
 
     public DemoResult run(Scenario scenario) {
+        if (!"OFFLINE".equals(runtime.getMode())) throw new IllegalStateException("Demo requires OFFLINE mode");
         String source = switch (scenario) { case DISCOVERY -> "gdelt"; case TITLE_ONLY -> "fed"; default -> "usgs"; };
         String file = switch (scenario) {
             case REVISED -> "usgs-revised.json";
