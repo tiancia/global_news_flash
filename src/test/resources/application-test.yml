@@ -5,5 +5,20 @@ spring:
     username: sa
     password: ""
 news:
+  runtime:
+    mode: OFFLINE
+    external-enabled: false
+  automation:
+    enabled: false
+  ingestion:
+    enabled: false
+  telegram:
+    enabled: false
+  publication:
+    worker-enabled: false
+  digest:
+    enabled: false
+  alert:
+    enabled: false
   ops:
     token: test-operator-token-0123456789abcdef

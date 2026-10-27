@@ -27,6 +27,7 @@ public final class EditorialService {
     private static final String SYNTHETIC_PROMPT = "synthetic-evidence-v1";
     private static final String SYNTHETIC_CONTRACT = "referenced-statements-v1";
     private static final String LIVE_PROMPT = "grounded-english-news-v1";
+    private static final String DEEPSEEK_PROMPT_V2 = "grounded-english-news-deepseek-v2";
     private static final String LIVE_CONTRACT = "quoted-statements-v1";
     private static final Set<String> EXCLUDED_TOPICS = Set.of(
             "WAR_CASUALTIES", "UNCONFIRMED_ATTACK", "PERSONAL_ALLEGATION");
@@ -50,7 +51,7 @@ public final class EditorialService {
         if (!analysis.reasons().isEmpty()) return rejected(analysis.reasons(), analysis.eventKey(), version, now);
         boolean synthetic = analysis.synthetic();
         var request = new EditorRequest(UUID.randomUUID().toString(), analysis.eventKey(),
-                synthetic ? SYNTHETIC_PROMPT : LIVE_PROMPT, synthetic ? SYNTHETIC_CONTRACT : LIVE_CONTRACT,
+                synthetic ? SYNTHETIC_PROMPT : editor.livePromptVersion(), synthetic ? SYNTHETIC_CONTRACT : LIVE_CONTRACT,
                 analysis.evidence().values().stream().sorted(Comparator.comparing(EditorRequest.EvidenceFact::sourceId)
                         .thenComparing(EditorRequest.EvidenceFact::materialId).thenComparing(EditorRequest.EvidenceFact::factId))
                         .toList(), now, synthetic);
@@ -83,8 +84,13 @@ public final class EditorialService {
         if (!analysis.reasons().isEmpty()) return analysis.reasons();
         if (draft == null) return List.of("INVALID_EDITOR_RESPONSE");
         boolean synthetic = analysis.synthetic();
+        // Historical drafts keep their original prompt version when the active provider changes.
+        boolean knownPrompt = synthetic ? SYNTHETIC_PROMPT.equals(draft.promptVersion())
+                : LIVE_PROMPT.equals(draft.promptVersion())
+                    || ("deepseek".equals(draft.provider()) && DEEPSEEK_PROMPT_V2.equals(draft.promptVersion()));
+        if (!knownPrompt) return List.of("INVALID_EDITOR_RESPONSE");
         var request = new EditorRequest(draft.requestId(), analysis.eventKey(),
-                synthetic ? SYNTHETIC_PROMPT : LIVE_PROMPT, synthetic ? SYNTHETIC_CONTRACT : LIVE_CONTRACT,
+                draft.promptVersion(), synthetic ? SYNTHETIC_CONTRACT : LIVE_CONTRACT,
                 List.copyOf(analysis.evidence().values()), clock.instant(), synthetic);
         var response = new EditorResponse(draft.statements(), draft.provider(), draft.model(), draft.promptVersion(),
                 draft.contractVersion(), draft.usage(), draft.synthetic(), "LOW", true);
@@ -161,7 +167,7 @@ public final class EditorialService {
                 || !request.promptVersion().equals(response.promptVersion()) || !request.contractVersion().equals(response.contractVersion())
                 || response.usage() == null || response.statements().isEmpty()) reasons.add("INVALID_EDITOR_RESPONSE");
         if (!request.synthetic()) {
-            if (!"openai".equals(response.provider()) || response.usage() == null || response.usage().estimated()) reasons.add("INVALID_EDITOR_RESPONSE");
+            if (!("openai".equals(response.provider()) || "deepseek".equals(response.provider())) || response.usage() == null || response.usage().estimated()) reasons.add("INVALID_EDITOR_RESPONSE");
             if (!"LOW".equals(response.risk())) reasons.add("EDITOR_RISK_REQUIRES_REVIEW");
             if (!response.relevant()) reasons.add("EDITOR_NOT_RELEVANT");
         }

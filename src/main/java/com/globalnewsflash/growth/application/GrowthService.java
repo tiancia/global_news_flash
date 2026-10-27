@@ -1,15 +1,13 @@
 package com.globalnewsflash.growth.application;
 
+import static com.globalnewsflash.shared.Hashing.sha256;
+
 import com.globalnewsflash.growth.domain.Distribution;
 import com.globalnewsflash.growth.domain.GrowthMaterials;
 import com.globalnewsflash.growth.domain.GrowthReport;
 import com.globalnewsflash.growth.domain.JoinResult;
 import com.globalnewsflash.growth.infrastructure.GrowthMapper;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.dao.DuplicateKeyException;
@@ -196,11 +194,4 @@ public class GrowthService {
         }
     }
 
-    private static String sha256(String value) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("Required SHA-256 implementation unavailable", exception);
-        }
-    }
 }

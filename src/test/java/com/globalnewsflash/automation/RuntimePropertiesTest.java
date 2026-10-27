@@ -13,6 +13,10 @@ class RuntimePropertiesTest {
         properties.validate();
         assertThat(properties.live()).isTrue();
     }
+    @Test void invalidProviderFailsClosed() {
+        var properties = new RuntimeProperties(); properties.setPreferredProvider("unrecognized");
+        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class);
+    }
     @Test void externalFlagCannotTurnOnClients() {
         var properties = new RuntimeProperties(); properties.setExternalEnabled(true);
         assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class);

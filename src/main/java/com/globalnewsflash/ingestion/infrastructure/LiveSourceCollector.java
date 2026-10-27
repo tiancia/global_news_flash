@@ -1,21 +1,19 @@
 package com.globalnewsflash.ingestion.infrastructure;
 
+import static com.globalnewsflash.shared.Hashing.sha256;
+
 import com.globalnewsflash.ingestion.application.LiveIngestionService.SourceSpec;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourceMaterial.Fact;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import tools.jackson.databind.json.JsonMapper;
@@ -80,7 +78,7 @@ public final class LiveSourceCollector {
                 default -> throw new CollectionFailure("UNKNOWN_SOURCE_TYPE");
             };
             String cursor = metadata.stream().map(LiveSourceCollector::materialTime).max(Comparator.naturalOrder())
-                    .filter(time -> !Instant.EPOCH.equals(time)).map(Instant::toString).orElse("feed:" + hash(snapshot.payload()));
+                    .filter(time -> !Instant.EPOCH.equals(time)).map(Instant::toString).orElse("feed:" + sha256(snapshot.payload()));
             return new Batch(List.copyOf(materials), snapshot.etag(), snapshot.lastModified(), cursor, false,
                     nextOffset, nextOffset == metadata.size());
         } catch (HeartbeatFailure failure) { throw failure; }
@@ -95,8 +93,8 @@ public final class LiveSourceCollector {
             case "FED" -> fed.parse(payload, discoveredAt, false);
             case "GDELT" -> gdelt.parse(payload, discoveredAt, false);
             case "RSS" -> syndication.parse(payload, source.url()).stream().map(entry -> new SourceMaterial(
-                    source.id(), entry.externalId(), source.id() + ":" + hash(entry.externalId()), entry.url(), entry.title(),
-                    source.topic(), source.producer(), source.id() + ":" + hash(entry.url()), null, entry.publishedAt(),
+                    source.id(), entry.externalId(), source.id() + ":" + sha256(entry.externalId()), entry.url(), entry.title(),
+                    source.topic(), source.producer(), source.id() + ":" + sha256(entry.url()), null, entry.publishedAt(),
                     entry.updatedAt(), discoveredAt, List.of(), true, false)).toList();
             default -> throw new CollectionFailure("UNKNOWN_SOURCE_TYPE");
         };
@@ -142,9 +140,9 @@ public final class LiveSourceCollector {
                 if (facts.isEmpty()) throw new CollectionFailure("ARTICLE_BODY_INSUFFICIENT");
                 if (revision == null) revision = modified(page.lastModified());
             }
-            String eventKey = source.id() + ":" + hash(entry.externalId());
+            String eventKey = source.id() + ":" + sha256(entry.externalId());
             var material = new SourceMaterial(source.id(), entry.externalId(), eventKey, url, entry.title(),
-                    source.topic(), source.producer(), source.id() + ":" + hash(url), null, entry.publishedAt(),
+                    source.topic(), source.producer(), source.id() + ":" + sha256(url), null, entry.publishedAt(),
                     revision, discoveredAt, facts, facts.isEmpty(), false);
             if (policy.check(material).isEmpty()) result.add(material);
         }
@@ -164,8 +162,4 @@ public final class LiveSourceCollector {
         catch (DateTimeParseException invalid) { return null; }
     }
 
-    private static String hash(String value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
-    }
 }

@@ -1,5 +1,7 @@
 package com.globalnewsflash.automation.application;
 
+import static com.globalnewsflash.shared.Hashing.sha256;
+
 import com.globalnewsflash.automation.infrastructure.LiveAutomationMapper;
 import com.globalnewsflash.automation.infrastructure.LiveAutomationMapper.EditorJob;
 import com.globalnewsflash.automation.infrastructure.OperatingProperties;
@@ -11,17 +13,14 @@ import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.editorial.domain.EditorialResult;
 import com.globalnewsflash.editorial.domain.EditorResponse;
 import com.globalnewsflash.editorial.application.EditorFailure;
-import com.globalnewsflash.editorial.infrastructure.OpenAiProperties;
+import com.globalnewsflash.ai.application.AiProviderSettings;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import com.globalnewsflash.publication.application.PublicationService;
 import com.globalnewsflash.publication.infrastructure.TelegramProperties;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -40,7 +39,7 @@ public class LivePipelineService {
     private final EditorialService editorial;
     private final PublicationService publications;
     private final BudgetService budgets;
-    private final OpenAiProperties openai;
+    private final AiProviderSettings ai;
     private final TelegramProperties telegram;
     private final OperatingProperties operating;
     private final RuntimeProperties runtime;
@@ -49,11 +48,11 @@ public class LivePipelineService {
     private final TransactionTemplate tx;
 
     public LivePipelineService(PipelineMapper pipeline, LiveAutomationMapper jobs, EditorialService editorial,
-            PublicationService publications, BudgetService budgets, OpenAiProperties openai,
+            PublicationService publications, BudgetService budgets, AiProviderSettings ai,
             TelegramProperties telegram, OperatingProperties operating, RuntimeProperties runtime,
             JsonMapper json, Clock clock, PlatformTransactionManager manager) {
         this.pipeline = pipeline; this.jobs = jobs; this.editorial = editorial; this.publications = publications;
-        this.budgets = budgets; this.openai = openai; this.telegram = telegram; this.operating = operating;
+        this.budgets = budgets; this.ai = ai; this.telegram = telegram; this.operating = operating;
         this.runtime = runtime; this.json = json; this.clock = clock;
         tx = new TransactionTemplate(manager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -108,7 +107,7 @@ public class LivePipelineService {
             List<String> rejected = editorial.validateEvidence(materials, sources, policy);
             if (!rejected.isEmpty()) return new Prepared(null, sources, new PipelineService.PipelineRun(
                     key, existing.eventVersion(), "HELD", rejected, null, false, false));
-            if (allocation == null || allocation.estimatedMicros() < openai.estimatedRequestMicros())
+            if (allocation == null || allocation.estimatedMicros() < ai.estimatedRequestMicros())
                 throw new IllegalArgumentException("A conservative request budget is required");
             String reservationId = "live:" + UUID.randomUUID();
             if (budgets.tryReserve(reservationId, allocation.periodId(), allocation.estimatedMicros()) == null)
@@ -129,7 +128,7 @@ public class LivePipelineService {
         if (denied.isEmpty() && hasPrevious && (original == null || "HOLD".equals(operating.getRevisionMode())))
             denied = List.of(original == null ? "ORIGINAL_DELIVERY_NOT_CONFIRMED" : "REVISION_POLICY_NOT_READY");
         if (denied.isEmpty() && allocation == null) denied = List.of("BUDGET_NOT_CONFIGURED");
-        if (denied.isEmpty() && allocation.estimatedMicros() < openai.estimatedRequestMicros())
+        if (denied.isEmpty() && allocation.estimatedMicros() < ai.estimatedRequestMicros())
             throw new IllegalArgumentException("A conservative request budget is required");
         String jobId = UUID.randomUUID().toString();
         String reservationId = null;
@@ -153,8 +152,8 @@ public class LivePipelineService {
                 json.writeValueAsString(sources), reservationId, clock.millis()));
         pipeline.updateVersion(key, next);
         for (SourceMaterial material : materials) {
-            String materialFingerprint = hash(materialIdentity(material));
-            String id = hash(material.sourceId() + "\n" + key + "\n" + materialFingerprint);
+            String materialFingerprint = sha256(materialIdentity(material));
+            String id = sha256(material.sourceId() + "\n" + key + "\n" + materialFingerprint);
             if (pipeline.findMaterial(id) == null) pipeline.insertMaterial(id, material.sourceId(), key,
                     materialFingerprint, json.writeValueAsString(material), material.discoveredAt().toEpochMilli(), false);
         }
@@ -184,7 +183,7 @@ public class LivePipelineService {
                     List.of(safeCode(failure.code())), null, false, false);
         }
         try {
-            long cost = usage == null ? 0 : openai.actualMicros(usage);
+            long cost = usage == null ? 0 : ai.actualMicros(usage);
             budgets.settle(job.reservationId(), cost);
         } catch (RuntimeException overage) {
             uncertain(job, "MODEL_COST_REQUIRES_RECONCILIATION");
@@ -267,7 +266,7 @@ public class LivePipelineService {
         String periodId = "live-usd:" + clock.instant().atZone(java.time.ZoneOffset.UTC).toLocalDate();
         budgets.configurePeriod(periodId, operating.getDailyBudgetMicros(), operating.getDailyRequests());
         return process(Arrays.asList(json.readValue(snapshot.materialsPayload(), SourceMaterial[].class)),
-                operating.policy(), new PipelineService.BudgetAllocation(periodId, openai.estimatedRequestMicros()));
+                operating.policy(), new PipelineService.BudgetAllocation(periodId, ai.estimatedRequestMicros()));
     }
 
     private void uncertain(EditorJob job, String reason) {
@@ -297,7 +296,7 @@ public class LivePipelineService {
                 ? Set.of() : Set.copyOf(Arrays.asList(s.permittedProducers().split(","))))).toList();
     }
     private String fingerprint(List<SourceMaterial> input, EditorialPolicy policy, List<SourcePolicy> sources) {
-        return hash(json.writeValueAsString(input.stream().map(this::materialIdentity).distinct().sorted().toList())
+        return sha256(json.writeValueAsString(input.stream().map(this::materialIdentity).distinct().sorted().toList())
                 + json.writeValueAsString(Arrays.asList(policy.version(), policy.maxAge(), policy.maxCharacters(),
                 policy.minimumIndependentChains(), policy.allowedTopics().stream().sorted().toList(), policy.ready()))
                 + json.writeValueAsString(sources.stream().filter(s -> input.stream().anyMatch(m -> m.sourceId().equals(s.sourceId())))
@@ -315,9 +314,5 @@ public class LivePipelineService {
     }
     private static String safeCode(String code) {
         return code != null && code.matches("[A-Z][A-Z0-9_]{0,127}") ? code : "EDITOR_ERROR";
-    }
-    private static String hash(String value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 }

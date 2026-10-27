@@ -4,7 +4,7 @@ import com.globalnewsflash.automation.infrastructure.LiveAutomationMapper;
 import com.globalnewsflash.automation.infrastructure.OperatingProperties;
 import com.globalnewsflash.automation.infrastructure.PipelineMapper;
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.editorial.infrastructure.OpenAiProperties;
+import com.globalnewsflash.ai.application.AiProviderSettings;
 import com.globalnewsflash.digest.application.DigestService;
 import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
 import com.globalnewsflash.ingestion.application.LiveIngestionService;
@@ -26,7 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class LiveAutomationService {
     private final RuntimeProperties runtime;
     private final OperatingProperties operating;
-    private final OpenAiProperties openai;
+    private final AiProviderSettings ai;
     private final TelegramProperties telegram;
     private final LiveIngestionProperties ingestionProperties;
     private final LiveIngestionService ingestion;
@@ -40,11 +40,11 @@ public class LiveAutomationService {
     private final PipelineMapper evidence;
 
     public LiveAutomationService(RuntimeProperties runtime, OperatingProperties operating,
-            OpenAiProperties openai, TelegramProperties telegram, LiveIngestionProperties ingestionProperties,
+            AiProviderSettings ai, TelegramProperties telegram, LiveIngestionProperties ingestionProperties,
             LiveIngestionService ingestion, LivePipelineService pipeline, PublicationService publications,
             BudgetService budgets, LiveAutomationMapper mapper, Clock clock, PlatformTransactionManager manager,
             DigestService digest, PipelineMapper evidence) {
-        this.runtime = runtime; this.operating = operating; this.openai = openai; this.telegram = telegram;
+        this.runtime = runtime; this.operating = operating; this.ai = ai; this.telegram = telegram;
         this.ingestionProperties = ingestionProperties; this.ingestion = ingestion; this.pipeline = pipeline;
         this.publications = publications; this.budgets = budgets; this.mapper = mapper; this.clock = clock;
         tx = new TransactionTemplate(manager);
@@ -56,19 +56,20 @@ public class LiveAutomationService {
         var reasons = new ArrayList<String>();
         if (!runtime.live()) reasons.add("LIVE_EXTERNAL_ACCESS_DISABLED");
         reasons.addAll(operating.problems());
-        reasons.addAll(openai.readinessReasons());
-        if (openai.readinessReasons().isEmpty()) {
+        var aiReasons = ai.readinessReasons();
+        reasons.addAll(aiReasons);
+        if (aiReasons.isEmpty()) {
             try {
-                if (openai.estimatedRequestMicros() > operating.getDailyBudgetMicros())
+                if (ai.estimatedRequestMicros() > operating.getDailyBudgetMicros())
                     reasons.add("REQUEST_RESERVATION_EXCEEDS_DAILY_BUDGET");
-            } catch (RuntimeException invalidPrice) { reasons.add("OPENAI_COST_LIMIT_INVALID"); }
+            } catch (RuntimeException invalidPrice) { reasons.add("AI_COST_LIMIT_INVALID"); }
         }
         if (!ingestionProperties.isEnabled()) reasons.add("INGESTION_DISABLED");
         if (runtime.live() && evidence.sources().stream().noneMatch(s -> !s.synthetic() && s.enabled() && s.approved()))
             reasons.add("NO_APPROVED_SOURCE_ENABLED");
         if (telegram.getChatId() == null || telegram.getChatId().isBlank()) reasons.add("TELEGRAM_TARGET_MISSING");
-        if (operating.getJobLease() != null && openai.getTimeout() != null
-                && operating.getJobLease().compareTo(openai.getTimeout().plusSeconds(30)) <= 0)
+        if (operating.getJobLease() != null && ai.getTimeout() != null
+                && operating.getJobLease().compareTo(ai.getTimeout().plusSeconds(30)) <= 0)
             reasons.add("EDITOR_LEASE_TOO_SHORT");
         if (operating.getJobLease() != null && ingestionProperties.getInboxLeaseSeconds() * 1000L
                 <= operating.getJobLease().toMillis()) reasons.add("INBOX_LEASE_TOO_SHORT");
@@ -79,10 +80,11 @@ public class LiveAutomationService {
     }
 
     public Map<String, Object> status() {
+        var reasons = readinessReasons();
         var status = new LinkedHashMap<String, Object>();
         status.put("schedulerEnabled", operating.isEnabled());
-        status.put("ready", readinessReasons().isEmpty());
-        status.put("reasons", readinessReasons());
+        status.put("ready", reasons.isEmpty());
+        status.put("reasons", reasons);
         status.put("telegramDeliveryEnabled", telegram.isEnabled());
         status.put("telegramConfigured", telegram.isConfigured());
         status.put("revisionMode", operating.getRevisionMode());
@@ -123,7 +125,7 @@ public class LiveAutomationService {
                 var item = pending.getFirst();
                 try {
                     var result = pipeline.process(List.of(item.material()), operating.policy(),
-                            new PipelineService.BudgetAllocation(periodId, openai.estimatedRequestMicros()));
+                            new PipelineService.BudgetAllocation(periodId, ai.estimatedRequestMicros()));
                     if ("DEFERRED".equals(result.state())) ingestion.retry(item.id(), result.reasons().getFirst());
                     else ingestion.complete(item.id(), result.state(), result.reasons().isEmpty() ? "QUEUED" : result.reasons().getFirst());
                     results.add(result);

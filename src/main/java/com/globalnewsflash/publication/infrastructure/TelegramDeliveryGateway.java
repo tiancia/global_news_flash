@@ -1,15 +1,14 @@
 package com.globalnewsflash.publication.infrastructure;
 
+import com.globalnewsflash.shared.BoundedBodySubscriber;
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
 import com.globalnewsflash.publication.application.DeliveryGateway;
 import com.globalnewsflash.publication.application.DeliveryResult;
 import com.globalnewsflash.publication.domain.PublicationOperation;
-import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -17,8 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -192,7 +189,9 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
                     URI.create("https://api.telegram.org/bot" + properties.getBotToken() + "/" + method))
                     .timeout(properties.getRequestTimeout()).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(payload))).build();
-            pending = client.sendAsync(request, ignored -> new BoundedBody(properties.getMaxResponseBytes()));
+            pending = client.sendAsync(request, ignored -> new BoundedBodySubscriber(properties.getMaxResponseBytes(),
+                    () -> new IllegalStateException("TELEGRAM_RESPONSE_TOO_LARGE"),
+                    () -> new IllegalStateException("TELEGRAM_RESPONSE_FAILED")));
             HttpResponse<byte[]> response = pending.get(properties.getRequestTimeout().toMillis(), TimeUnit.MILLISECONDS);
             JsonNode body;
             try {
@@ -229,34 +228,4 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
         private PreflightFailure(String code) { super(code); this.code = code; }
     }
 
-    /** Cancels the upstream subscription before buffering beyond the configured body limit. */
-    private static final class BoundedBody implements HttpResponse.BodySubscriber<byte[]> {
-        private final int limit;
-        private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        private final CompletableFuture<byte[]> result = new CompletableFuture<>();
-        private Flow.Subscription subscription;
-        private BoundedBody(int limit) { this.limit = limit; }
-        @Override public CompletionStage<byte[]> getBody() { return result; }
-        @Override public void onSubscribe(Flow.Subscription value) {
-            subscription = value;
-            value.request(1);
-        }
-        @Override public void onNext(List<ByteBuffer> items) {
-            for (ByteBuffer item : items) {
-                if (item.remaining() > limit - buffer.size()) {
-                    subscription.cancel();
-                    result.completeExceptionally(new IllegalStateException("TELEGRAM_RESPONSE_TOO_LARGE"));
-                    return;
-                }
-                byte[] bytes = new byte[item.remaining()];
-                item.get(bytes);
-                buffer.writeBytes(bytes);
-            }
-            subscription.request(1);
-        }
-        @Override public void onError(Throwable failure) {
-            result.completeExceptionally(new IllegalStateException("TELEGRAM_RESPONSE_FAILED"));
-        }
-        @Override public void onComplete() { result.complete(buffer.toByteArray()); }
-    }
 }

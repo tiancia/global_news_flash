@@ -4,6 +4,7 @@ news:
   runtime:
     mode: LIVE
     external-enabled: ${NEWS_EXTERNAL_ENABLED:true}
+    preferred-provider: ${NEWS_AI_PROVIDER:deepseek}
   ingestion:
     enabled: ${NEWS_INGESTION_ENABLED:true}
     max-items-per-source: ${NEWS_MAX_ITEMS_PER_SOURCE:3}
@@ -16,13 +17,5 @@ news:
       license-version: ${NEWS_FED_LICENSE_VERSION:fed-board-announcement-text-2026-10-26}
       permitted-producers: ${NEWS_FED_PERMITTED_PRODUCERS:federal-reserve-board}
   automation:
-    enabled: ${NEWS_AUTOMATION_ENABLED:false}
-    policy-ready: ${NEWS_POLICY_READY:false}
-  telegram:
-    enabled: ${NEWS_TELEGRAM_ENABLED:false}
-  publication:
-    worker-enabled: ${NEWS_PUBLICATION_WORKER_ENABLED:false}
-  digest:
-    enabled: ${NEWS_DIGEST_ENABLED:false}
-  alert:
-    enabled: ${NEWS_ALERT_ENABLED:false}
+    policy-ready: ${NEWS_POLICY_READY:true}
+    batch-size: ${NEWS_AUTOMATION_BATCH_SIZE:1}

@@ -9,4 +9,7 @@ public interface EditorPort {
 
     /** The default preserves the fixture-only contract for simple test implementations. */
     default boolean supports(boolean synthetic) { return synthetic; }
+
+    /** Identifies the actual instructions used for a new live request. */
+    default String livePromptVersion() { return "grounded-english-news-v1"; }
 }

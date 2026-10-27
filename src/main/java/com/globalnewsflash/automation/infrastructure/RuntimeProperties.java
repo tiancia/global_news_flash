@@ -15,6 +15,9 @@ public class RuntimeProperties {
         if (!"OFFLINE".equals(mode) && !"LIVE".equals(mode)) {
             throw new IllegalStateException("NEWS_RUNTIME_MODE must be OFFLINE or LIVE");
         }
+        if (!"openai".equals(preferredProvider) && !"deepseek".equals(preferredProvider)) {
+            throw new IllegalStateException("NEWS_AI_PROVIDER must be openai or deepseek");
+        }
         if ("OFFLINE".equals(mode) && externalEnabled) {
             throw new IllegalStateException("External access requires LIVE mode");
         }

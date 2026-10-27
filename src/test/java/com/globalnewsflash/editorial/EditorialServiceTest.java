@@ -2,6 +2,8 @@ package com.globalnewsflash.editorial;
 
 import com.globalnewsflash.editorial.application.EditorialService;
 import com.globalnewsflash.editorial.application.EditorPort;
+import com.globalnewsflash.editorial.application.EditorFailure;
+import com.globalnewsflash.editorial.domain.EditorialDraft;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.editorial.domain.EditorResponse;
 import com.globalnewsflash.editorial.infrastructure.SyntheticEditor;
@@ -17,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EditorialServiceTest {
     private static final Instant NOW = Instant.parse("2026-10-24T10:00:00Z");
@@ -229,6 +232,85 @@ class EditorialServiceTest {
         var shortPolicy = new EditorialPolicy("test-only", Duration.ofHours(24), 30, 1, Set.of("EARTHQUAKE"), true);
         assertThat(service.evaluate(List.of(material()), List.of(source()), shortPolicy).reasons())
                 .containsExactly("DRAFT_TOO_LONG");
+    }
+
+    @Test
+    void storedDraftRemainsValidAfterSwitchingProviders() {
+        var original = material();
+        var real = copy(original, original.topic(), original.eventKey(), original.evidenceChainId(),
+                original.occurredAt(), original.publishedAt(), original.facts(), false, false);
+        var realSource = new SourcePolicy("usgs", true, true, false, "license-v1", Set.of("us"));
+        var openai = new EditorialService(CLOCK, fakeLiveEditor("openai"));
+        var deepseek = new EditorialService(CLOCK, fakeLiveEditor("deepseek"));
+        var oldOpenAi = openai.evaluate(List.of(real), List.of(realSource), policy(1));
+        var oldDeepSeek = deepseek.evaluate(List.of(real), List.of(realSource), policy(1));
+        assertThat(oldOpenAi.eligible()).isTrue();
+        assertThat(oldDeepSeek.eligible()).isTrue();
+        assertThat(oldOpenAi.draft().promptVersion()).isEqualTo("grounded-english-news-v1");
+        assertThat(oldDeepSeek.draft().promptVersion()).isEqualTo("grounded-english-news-deepseek-v2");
+        assertThat(deepseek.validateStoredDraft(List.of(real), List.of(realSource), policy(1), oldOpenAi.draft())).isEmpty();
+        assertThat(openai.validateStoredDraft(List.of(real), List.of(realSource), policy(1), oldDeepSeek.draft())).isEmpty();
+        var legacyDeepSeek = withPrompt(oldDeepSeek.draft(), "grounded-english-news-v1");
+        assertThat(openai.validateStoredDraft(List.of(real), List.of(realSource), policy(1), legacyDeepSeek)).isEmpty();
+        assertThat(deepseek.validateStoredDraft(List.of(real), List.of(realSource), policy(1), legacyDeepSeek)).isEmpty();
+        var unknownPrompt = withPrompt(oldDeepSeek.draft(), "unknown-prompt");
+        assertThat(openai.validateStoredDraft(List.of(real), List.of(realSource), policy(1), unknownPrompt))
+                .containsExactly("INVALID_EDITOR_RESPONSE");
+        var wrongProviderVersion = withPrompt(oldOpenAi.draft(), "grounded-english-news-deepseek-v2");
+        assertThat(deepseek.validateStoredDraft(List.of(real), List.of(realSource), policy(1), wrongProviderVersion))
+                .containsExactly("INVALID_EDITOR_RESPONSE");
+    }
+
+    @Test
+    void realDraftRequiresNumbersInTheQuoteAndUniqueEvidenceIds() {
+        var original = material();
+        var real = copy(original, original.topic(), original.eventKey(), original.evidenceChainId(),
+                original.occurredAt(), original.publishedAt(), original.facts(), false, false);
+        var realSource = new SourcePolicy("usgs", true, true, false, "license-v1", Set.of("us"));
+        var wrongNumber = new EditorResponse.Statement("usgs", "synthetic-1", "magnitude",
+                "USGS reports a magnitude 8.5 earthquake.", FACT);
+        var first = new EditorResponse.Statement("usgs", "synthetic-1", "magnitude", FACT, FACT);
+        var second = new EditorResponse.Statement("usgs", "synthetic-1", "magnitude",
+                "USGS reports an earthquake near Synthetic Island.", FACT);
+        var numericEditor = new EditorialService(CLOCK, fakeLiveStatements(List.of(wrongNumber)));
+        var duplicateEditor = new EditorialService(CLOCK, fakeLiveStatements(List.of(first, second)));
+        assertThatThrownBy(() -> numericEditor.evaluate(List.of(real), List.of(realSource), policy(1)))
+                .isInstanceOfSatisfying(EditorFailure.class, f -> assertThat(f.code()).isEqualTo("UNSUPPORTED_NUMBER"));
+        assertThatThrownBy(() -> duplicateEditor.evaluate(List.of(real), List.of(realSource), policy(1)))
+                .isInstanceOfSatisfying(EditorFailure.class, f -> assertThat(f.code()).isEqualTo("DUPLICATE_STATEMENT"));
+        var valid = new EditorialService(CLOCK, fakeLiveStatements(List.of(first)));
+        assertThat(valid.evaluate(List.of(real), List.of(realSource), policy(1)).eligible()).isTrue();
+    }
+
+    private static EditorPort fakeLiveStatements(List<EditorResponse.Statement> statements) {
+        return new EditorPort() {
+            @Override public boolean supports(boolean synthetic) { return !synthetic; }
+            @Override public EditorResponse edit(com.globalnewsflash.editorial.domain.EditorRequest request) {
+                return new EditorResponse(statements, "deepseek", "test-model", request.promptVersion(),
+                        request.contractVersion(), new EditorResponse.Usage(100, 50, false), false, "LOW", true);
+            }
+        };
+    }
+
+    private static EditorialDraft withPrompt(EditorialDraft draft, String prompt) {
+        return new EditorialDraft(draft.requestId(), draft.statements(), draft.body(), draft.provider(), draft.model(),
+                prompt, draft.contractVersion(), draft.usage(), draft.synthetic());
+    }
+
+    private static EditorPort fakeLiveEditor(String provider) {
+        return new EditorPort() {
+            @Override public boolean supports(boolean synthetic) { return !synthetic; }
+            @Override public String livePromptVersion() {
+                return "deepseek".equals(provider) ? "grounded-english-news-deepseek-v2" : EditorPort.super.livePromptVersion();
+            }
+            @Override public EditorResponse edit(com.globalnewsflash.editorial.domain.EditorRequest request) {
+                var fact = request.facts().getFirst();
+                var statement = new EditorResponse.Statement(fact.sourceId(), fact.materialId(), fact.factId(),
+                        fact.text(), fact.text());
+                return new EditorResponse(List.of(statement), provider, "test-model", request.promptVersion(),
+                        request.contractVersion(), new EditorResponse.Usage(100, 50, false), false, "LOW", true);
+            }
+        };
     }
 
     private static EditorResponse altered(EditorResponse response, EditorResponse.Statement statement) {

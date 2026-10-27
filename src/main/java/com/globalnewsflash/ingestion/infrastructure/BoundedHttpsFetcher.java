@@ -1,13 +1,12 @@
 package com.globalnewsflash.ingestion.infrastructure;
 
+import com.globalnewsflash.shared.BoundedBodySubscriber;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
-import java.io.ByteArrayOutputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -15,10 +14,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Flow;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -122,7 +119,8 @@ final class BoundedHttpsFetcher {
     }
 
     private HttpResponse<byte[]> send(HttpRequest request) throws InterruptedException {
-        var future = client.sendAsync(request, ignored -> new LimitedBody(properties.getMaxResponseBytes()));
+        var future = client.sendAsync(request, ignored -> new BoundedBodySubscriber(properties.getMaxResponseBytes(),
+                () -> new FetchFailure("SOURCE_BODY_TOO_LARGE"), () -> new FetchFailure("SOURCE_FETCH_FAILED")));
         try {
             // The future completes only after the bounded subscriber receives the complete body.
             return future.get(properties.getRequestTimeoutSeconds(), TimeUnit.SECONDS);
@@ -144,31 +142,4 @@ final class BoundedHttpsFetcher {
         return value;
     }
 
-    private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
-        private final int max;
-        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        private final CompletableFuture<byte[]> body = new CompletableFuture<>();
-        private Flow.Subscription subscription;
-        LimitedBody(int max) { this.max = max; }
-        @Override public CompletionStage<byte[]> getBody() { return body; }
-        @Override public void onSubscribe(Flow.Subscription value) {
-            subscription = value;
-            value.request(1);
-        }
-        @Override public void onNext(List<ByteBuffer> buffers) {
-            for (ByteBuffer buffer : buffers) {
-                if (buffer.remaining() > max - bytes.size()) {
-                    subscription.cancel();
-                    body.completeExceptionally(new FetchFailure("SOURCE_BODY_TOO_LARGE"));
-                    return;
-                }
-                byte[] chunk = new byte[buffer.remaining()];
-                buffer.get(chunk);
-                bytes.writeBytes(chunk);
-            }
-            subscription.request(1);
-        }
-        @Override public void onError(Throwable failure) { body.completeExceptionally(new FetchFailure("SOURCE_FETCH_FAILED")); }
-        @Override public void onComplete() { body.complete(bytes.toByteArray()); }
-    }
 }

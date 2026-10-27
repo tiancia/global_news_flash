@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = {"spring.datasource.url=jdbc:h2:mem:ops-tests;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
-        "news.clock.fixed=2026-10-24T14:00:00Z"})
+        "news.clock.fixed=2026-10-24T14:00:00Z", "news.ops.token=test-operator-token-0123456789abcdef"})
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 class OpsControllerTest {
@@ -30,6 +30,17 @@ class OpsControllerTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.paused").value(true));
         mvc.perform(post("/ops/sources/usgs:real/state").header("X-Ops-Token", TOKEN)
                 .contentType("application/json").content("{\"enabled\":true}")).andExpect(status().isBadRequest());
+    }
+
+    @Test void separatedReadEndpointsRetainRoutesAndAuthentication() throws Exception {
+        for (String path : new String[]{"/ops/publications", "/ops/alerts", "/ops/report",
+                "/ops/sources", "/ops/events", "/ops/ingestion", "/ops/ingestion/inbox",
+                "/ops/editor-jobs", "/ops/automation", "/ops/automation/alerts", "/ops/digests", "/ops/notifications"}) {
+            mvc.perform(get(path)).andExpect(status().isUnauthorized());
+            mvc.perform(get(path).header("X-Ops-Token", TOKEN)).andExpect(status().isOk());
+        }
+        mvc.perform(post("/ops/publications/unknown/resolve").header("X-Ops-Token", TOKEN)
+                .contentType("application/json").content("{}")).andExpect(status().isBadRequest());
     }
     @Test void demoEndpointExecutesOnlyFictionalWorkflow() throws Exception {
         mvc.perform(post("/ops/pause").header("X-Ops-Token", TOKEN).contentType("application/json").content("{\"paused\":false}"))

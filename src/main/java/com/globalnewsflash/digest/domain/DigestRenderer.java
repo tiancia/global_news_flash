@@ -1,11 +1,9 @@
 package com.globalnewsflash.digest.domain;
 
+import static com.globalnewsflash.shared.Hashing.sha256;
+
 import com.globalnewsflash.digest.infrastructure.DigestMapper.DigestItem;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,11 +18,7 @@ public final class DigestRenderer {
     }
     public static String eventKey(String date, String target) {
         LocalDate.parse(date);
-        try {
-            String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(target.getBytes(StandardCharsets.UTF_8)));
-            return "digest:" + date + ":" + hash;
-        } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException("SHA-256 unavailable"); }
+        return "digest:" + date + ":" + sha256(target);
     }
     public static int length(String body) { return body.codePointCount(0, body.length()); }
 }

@@ -1,5 +1,7 @@
 package com.globalnewsflash.automation.application;
 
+import static com.globalnewsflash.shared.Hashing.sha256;
+
 import com.globalnewsflash.automation.infrastructure.PipelineMapper;
 import com.globalnewsflash.automation.infrastructure.PipelineMapper.EventVersion;
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
@@ -9,14 +11,10 @@ import com.globalnewsflash.editorial.domain.EditorialResult;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import com.globalnewsflash.publication.application.PublicationService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -77,7 +75,7 @@ public class PipelineService {
         List<SourcePolicy> relevantPolicies = policies.stream()
                 .filter(p -> input.stream().anyMatch(m -> p.sourceId().equals(m.sourceId())))
                 .sorted(Comparator.comparing(SourcePolicy::sourceId)).toList();
-        String fingerprint = hash(json.writeValueAsString(input.stream().map(this::materialIdentity).distinct().sorted().toList())
+        String fingerprint = sha256(json.writeValueAsString(input.stream().map(this::materialIdentity).distinct().sorted().toList())
                 + json.writeValueAsString(Arrays.asList(policy.version(), policy.maxAge(), policy.maxCharacters(),
                 policy.minimumIndependentChains(), policy.allowedTopics().stream().sorted().toList(), policy.ready()))
                 + json.writeValueAsString(relevantPolicies.stream().map(p -> Arrays.asList(p.sourceId(), p.enabled(),
@@ -93,8 +91,8 @@ public class PipelineService {
                     existing.publicationId(), true, true);
         }
         for (var material : input) {
-            String materialFingerprint = hash(materialIdentity(material));
-            String id = hash(material.sourceId() + "\n" + eventKey + "\n" + materialFingerprint);
+            String materialFingerprint = sha256(materialIdentity(material));
+            String id = sha256(material.sourceId() + "\n" + eventKey + "\n" + materialFingerprint);
             if (mapper.findMaterial(id) == null) {
                 mapper.insertMaterial(id, material.sourceId(), eventKey, materialFingerprint,
                         json.writeValueAsString(material), material.discoveredAt().toEpochMilli(), true);
@@ -107,7 +105,7 @@ public class PipelineService {
         } else if (budget == null || budgets.report().stream().noneMatch(p -> p.id().equals(budget.periodId()))) {
             decision = new EditorialResult(false, List.of("BUDGET_NOT_CONFIGURED"), null, eventKey, policy.version(), clock.instant());
         } else {
-            var reservation = budgets.tryReserve("edit:" + hash(eventKey + fingerprint), budget.periodId(), budget.estimatedMicros());
+            var reservation = budgets.tryReserve("edit:" + sha256(eventKey + fingerprint), budget.periodId(), budget.estimatedMicros());
             if (reservation == null) {
                 decision = new EditorialResult(false, List.of("BUDGET_EXHAUSTED"), null, eventKey, policy.version(), clock.instant());
             } else {
@@ -173,8 +171,4 @@ public class PipelineService {
         mapper.audit(UUID.randomUUID().toString(), action, subject, details, clock.millis());
     }
 
-    private static String hash(String value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
-    }
 }

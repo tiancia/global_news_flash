@@ -1,5 +1,7 @@
 package com.globalnewsflash.ingestion.application;
 
+import static com.globalnewsflash.shared.Hashing.sha256;
+
 import com.globalnewsflash.automation.infrastructure.PipelineMapper.SourceRow;
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
@@ -8,14 +10,10 @@ import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import com.globalnewsflash.ingestion.infrastructure.LiveIngestionMapper;
 import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
 import com.globalnewsflash.ingestion.infrastructure.LiveSourceCollector;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -164,7 +162,7 @@ public class LiveIngestionService {
                     for (SourceMaterial material : batch.materials()) {
                         if (!currentPolicy.check(material).isEmpty()) throw new LiveSourceCollector.CollectionFailure("SOURCE_ADMISSION_CHANGED");
                         String fingerprint = materialFingerprint(material);
-                        String id = hash(material.sourceId() + "\n" + material.eventKey() + "\n" + fingerprint);
+                        String id = sha256(material.sourceId() + "\n" + material.eventKey() + "\n" + fingerprint);
                         if (mapper.inboxId(id) != null) continue;
                         if (!material.discoveryOnly() && ++backlog > properties.getMaxPendingItems()) {
                             throw new LiveSourceCollector.CollectionFailure("INBOX_BACKPRESSURE");
@@ -288,7 +286,7 @@ public class LiveIngestionService {
 
     private String materialFingerprint(SourceMaterial material) {
         // Rediscovery is not a new version; source revision timestamps and changed source text are.
-        return hash(json.writeValueAsString(Arrays.asList(material.sourceId(), material.externalId(), material.eventKey(),
+        return sha256(json.writeValueAsString(Arrays.asList(material.sourceId(), material.externalId(), material.eventKey(),
                 material.canonicalUrl(), material.headline(), material.topic(), material.producer(), material.evidenceChainId(),
                 material.occurredAt(), material.publishedAt(), material.sourceUpdatedAt(), material.facts(), material.discoveryOnly())));
     }
@@ -363,8 +361,4 @@ public class LiveIngestionService {
         return new IllegalStateException("Invalid explicitly approved live source configuration");
     }
 
-    private static String hash(String value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
-    }
 }
