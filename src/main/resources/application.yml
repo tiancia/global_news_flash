@@ -163,7 +163,7 @@ spring:
 
 ---
 # Combine live with mysql (local Docker database) or offline (local H2 file).
-# Initial setup permits manual collection only; no client is called at startup.
+# Live scheduling and Telegram delivery are enabled; the persisted global pause still controls execution.
 spring:
   config:
     activate:
@@ -173,6 +173,8 @@ news:
     mode: LIVE
     external-enabled: ${NEWS_EXTERNAL_ENABLED:true}
     preferred-provider: ${NEWS_AI_PROVIDER:deepseek}
+  telegram:
+    enabled: ${NEWS_TELEGRAM_ENABLED:true}
   ingestion:
     enabled: ${NEWS_INGESTION_ENABLED:true}
     max-items-per-source: ${NEWS_MAX_ITEMS_PER_SOURCE:3}
@@ -185,6 +187,7 @@ news:
       license-version: ${NEWS_FED_LICENSE_VERSION:fed-board-announcement-text-2026-10-26}
       permitted-producers: ${NEWS_FED_PERMITTED_PRODUCERS:federal-reserve-board}
   automation:
+    enabled: ${NEWS_AUTOMATION_ENABLED:true}
     policy-ready: ${NEWS_POLICY_READY:true}
     batch-size: ${NEWS_AUTOMATION_BATCH_SIZE:1}
 

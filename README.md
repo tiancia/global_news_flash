@@ -1,82 +1,122 @@
 # Global News Flash
 
-英文 Telegram 新闻后端，使用 Java 21、Spring Boot 4 和 MyBatis。支持离线演示，以及显式启用的真实采集、AI 编辑、Telegram 发布、日报与告警。
+面向英文 Telegram 频道的新闻采集、编辑与发布后端，使用 Java 21、Spring Boot 4 和 MyBatis。
 
-真实流程：**采集 → 来源与时效检查 → AI 编辑 → 引用校验 → 发布队列 → 发送前复验 → Telegram**。
+**采集 → 证据校验 → AI 编辑 → 发布队列 → 发送前复验 → Telegram**
 
-当前仍处于联调阶段，完整真实发布链路和长期运行尚未验收。离线测试通过不代表新闻质量或线上运营已验证。
+[项目结构](#项目结构) · [本地启动](#本地启动) · [启动后检查](#启动后检查) · [文档导航](#文档导航)
 
-## 从哪里开始
+## 项目概览
 
-- [配置与处理规则](docs/configuration.md)：外部服务清单、运行模式、环境变量、来源准入、预算和发布约束。
-- [运维手册](docs/operations.md)：接口、Docker、备份与故障核对。
-- [DDD 架构与模块职责](docs/architecture.md)：领域规则、流程编排、port 与适配器的边界。
-- [application.yml](src/main/resources/application.yml)：完整配置项及默认值；[.env.example](.env.example) 只列常用环境覆盖。
+- **采集**：接入 Fed、USGS、RSS / Atom，管理来源准入、正文素材和待办；GDELT 用于发现线索。
+- **编辑与发布**：支持 DeepSeek / OpenAI，提供证据校验、预算预占、发布队列、重试与人工核对。
+- **运行控制**：提供运维接口、全局暂停、可选日报和告警，也支持离线合成演示。
+
+当前处于联调阶段。应用启动和本地回归已验证，完整真实发布链路与长期运行尚未验收。
 
 ## 项目结构
 
 ```text
-src/main/java/com/globalnewsflash/
-  ingestion/     来源准入、采集状态、待办与素材持久化
-  editorial/     编辑契约、证据校验和成稿规则
-  publication/   发布队列、重试、人工核对与投递接口
-  digest/        从已发布内容生成日报
-  automation/    流程编排、预算、调度、运维与报表
-  growth/        离线推广与邀请归因演示
-  integrations/  外部服务接入
-    ai/          OpenAI / DeepSeek、供应商选择、配置与响应解析
-    sources/     Fed / USGS / GDELT / RSS、正文抓取与解析
-    telegram/    Bot API、权限检查、消息格式与配置
-    webhook/     告警 Webhook 投递与配置
-    http/        有大小限制的 HTTP 响应读取
-  shared/        通用哈希工具
+src/main/java/com/globalnewsflash/  业务模块、port 与外部接入
 src/main/resources/
-  application.yml    通用配置与按 Profile 启用的配置分段
-  db/migration/      数据库迁移历史
-  fixtures/          离线演示和测试共用的合成数据
-src/test/            单元与集成测试
-scripts/             离线 smoke、MySQL 备份和恢复
-compose.yml          本地基础服务入口，默认启动 MySQL
-deploy/docker/       应用镜像构建与可选应用容器编排
-docs/                当前配置与运维文档
+  application.yml                 公共配置及 Profile 差异
+  db/migration/                   Flyway 数据库迁移
+  fixtures/                       离线演示素材
+src/test/                         领域、架构与集成测试
+compose.yml                       基础服务入口，目前为 MySQL
+deploy/docker/                    应用 Dockerfile 与可选容器编排
+docs/                             配置、运维与架构文档
 ```
 
-业务模块采用 DDD 与 ports/adapters 分层：`domain` 定义业务模型、规则和状态决策；`application` 通过 port 编排加载、领域决策、持久化和外部调用，并管理事务与租约；`port/in` 定义用例入口，`port/out` 定义仓储、外部能力和只读运行配置；`infrastructure` 实现持久化、配置与运行装配；`interfaces` 接收 HTTP 请求。外部协议实现集中在 `integrations`。Controller、定时任务和模块间协作都依赖 port，domain 只依赖 JDK、领域类型与通用哈希工具。职责与检查方式见[架构说明](docs/architecture.md)。数据库迁移保留完整版本链，已执行的迁移不要合并或重写。
+模块职责与 DDD 分层见[架构与开发](docs/architecture.md)。
 
-## 构建与离线验证
+## 本地启动
 
-需要 Java 21；Maven 由仓库 Wrapper 提供。Windows 使用 PowerShell 7：
+以下以真实流程 `mysql,live` 为例，所有命令在项目根目录执行。
+只做本地调试时，将 Profile 改为 `mysql`，默认不访问外部服务。
 
-```powershell
-.\mvnw.cmd -B -ntp verify
-.\scripts\smoke.ps1 -SkipBuild
-```
+### 1. 准备环境
 
-smoke 检查重启去重、HTTP 鉴权和合成发布流程；结果默认写到系统临时目录，可通过 `-OutputDirectory <目录>` 指定位置。
+需要 Java 21、Docker Desktop 和 PowerShell 7；Maven 使用仓库自带的 Wrapper，无需单独安装。
 
-单独运行合成演示：
+真实流程需要在启动应用的进程或 IDE 中设置以下变量；只运行本地离线模式时，无需 AI 和 Telegram 密钥。
 
-```powershell
-java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar --spring.profiles.active=offline,demo --spring.main.web-application-type=none --news.demo.enabled=true --news.runtime.mode=OFFLINE --news.runtime.external-enabled=false
-```
+| 环境变量 | 用途 |
+| --- | --- |
+| `NEWS_OPS_TOKEN` | 独立运维令牌，至少 32 个字符 |
+| `DEEPSEEK_API_KEY` | `live` 默认编辑供应商的密钥 |
+| `NEWS_TELEGRAM_BOT_TOKEN` | 向目标频道发布消息的 Bot 令牌 |
 
-## 本地开发
+频道默认值见 [application.yml](src/main/resources/application.yml)，可用 `NEWS_TELEGRAM_CHAT_ID` 覆盖。
+`java -jar` 不会自动读取 `.env`；配置读取方式、供应商切换见[运行配置](docs/configuration.md)。
+
+### 2. 启动 MySQL
 
 ```powershell
 docker compose up -d
 docker compose ps
-java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar --spring.profiles.active=mysql
 ```
 
-MySQL 默认地址 `127.0.0.1:3307`，数据库与用户为 `global_news_flash`，本地开发密码为 `123456`。数据保存在 `A:/DockerData/global-news-flash/mysql`。应用默认监听 `127.0.0.1:8090`；健康检查为 `/actuator/health`，运维接口需要 `NEWS_OPS_TOKEN`。
+确认 `db` 处于 `healthy` 状态。本机默认连接 `127.0.0.1:3307`，完整连接参数见[数据库配置](docs/configuration.md#数据库)。
 
-以上命令在项目根目录执行。基础服务入口为根目录的 [compose.yml](compose.yml)，应用镜像和可选应用容器配置放在 [deploy/docker/](deploy/docker/)；文件分工与应用容器启动方式见[运维手册](docs/operations.md#docker-与本地数据库)。
+### 3. 构建并启动应用
 
-要手动采集，改用 `mysql,live` Profile，然后调用 `POST /ops/ingestion/poll`。该 Profile 默认选择 DeepSeek 并启用已配置的 Fed 来源，自动任务和真实发送仍关闭；细节见[配置说明](docs/configuration.md#运行模式)。
+先构建运行包，以下命令跳过测试；开发验证命令见[开发检查](docs/architecture.md#开发检查)。
+
+```powershell
+.\mvnw.cmd -B -ntp '-Dmaven.test.skip=true' package
+```
+
+启动真实流程：
+
+```powershell
+java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar `
+  --spring.profiles.active=mysql,live
+```
+
+也可以在 IDE 中直接运行 `GlobalNewsFlashApplication`，Active profiles 填写 `mysql,live`。
+其他运行组合及默认开关见[运行模式](docs/configuration.md#运行模式)。
+
+## 启动后检查
+
+在已设置运维令牌的 PowerShell 中检查状态：
+
+```powershell
+$newsBase = 'http://127.0.0.1:8090'
+$newsHeaders = @{ 'X-Ops-Token' = $env:NEWS_OPS_TOKEN }
+
+Invoke-RestMethod "$newsBase/actuator/health"
+Invoke-RestMethod "$newsBase/ops/status" -Headers $newsHeaders
+Invoke-RestMethod "$newsBase/ops/automation" -Headers $newsHeaders
+```
+
+确认健康检查为 `UP`，运行模式为 `LIVE`、`externalEnabled=true`，自动流程的 `ready=true`。
+若未就绪，先按返回的 `reasons` 处理；字段解释见[运行控制](docs/operations.md#运行控制)。
+
+`live` 默认开启自动任务和真实发送，但全局暂停是独立状态：初始为 `true`，重启保留上次值。
+两个开关都开启时，上次已解除暂停的流程会在重启后继续执行，上次暂停的流程则继续暂停。
+确认配置与目标频道后，需要开始执行时解除暂停：
+
+```powershell
+Invoke-RestMethod "$newsBase/ops/pause" -Method Post `
+  -Headers $newsHeaders -ContentType 'application/json' -Body '{"paused":false}'
+```
+
+自动流程随后按调度执行。可在 `/ops/automation` 查看周期记录，在 `/ops/publications` 查看投递结果，并核对频道实际消息；启动或 `ready=true` 本身不代表整条真实链路已经跑通。
+日常暂停、手动触发和异常核对见[日常运维](docs/operations.md)。
+
+## 文档导航
+
+| 想了解什么 | 去哪里看 |
+| --- | --- |
+| 运行模式、环境变量、来源与处理规则 | [运行配置](docs/configuration.md) |
+| 暂停与恢复、接口、Docker 和故障处理 | [日常运维](docs/operations.md) |
+| 模块职责、DDD 分层和开发约定 | [架构与开发](docs/architecture.md) |
+
+完整参数维护在 [application.yml](src/main/resources/application.yml)，常用覆盖项见 [.env.example](.env.example)。
 
 ## 功能边界
 
-- 引用、数字和结构校验只能排除部分错误，不能证明语义正确；高风险内容会挂起。
-- 跨媒体语义聚类与独立事实核实尚未实现；GDELT 仅用于发现。
-- `growth` 仅为合成演示，阅读量、订阅变化和真实推广效果尚未接通。
-- 项目保留当前代码、测试和用法；历史规划与联调记录保存在项目外的归档中。
+- 引用和数字校验不能保证语义正确；高风险或证据不足的内容会挂起。
+- 跨媒体语义聚类和独立事实核实尚未实现；GDELT 仅用于发现线索。
+- `growth` 仅用于合成演示，未接通真实推广、阅读量和订阅归因。

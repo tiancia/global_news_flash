@@ -6,6 +6,8 @@ import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
@@ -30,5 +32,11 @@ public class DemoRunner implements ApplicationRunner {
         try {
             System.out.println("SYNTHETIC_DEMO_RESULT=" + json.writeValueAsString(demo.run(DemoScenario.VALID)));
         } finally { publication.setPaused(true); }
+    }
+
+    /** All startup runners finish before a successful one-shot demo closes its context. */
+    @EventListener
+    public void closeAfterDemo(ApplicationReadyEvent event) {
+        event.getApplicationContext().close();
     }
 }

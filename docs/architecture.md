@@ -1,57 +1,91 @@
-# DDD 架构与模块职责
+# 架构与开发
 
-[返回首页](../README.md) · [配置](configuration.md) · [运维](operations.md)
+[首页](../README.md) · [配置](configuration.md) · [运维](operations.md) · **架构**
 
-项目采用模块化单体，以领域模型表达业务规则，通过 port 隔离用例与技术实现。模块按业务职责划分，按下面的依赖方向组织代码。
+项目采用模块化单体，以 DDD 表达业务规则，通过 ports/adapters 隔离流程与技术实现。
 
-```text
-interfaces / infrastructure 中的定时任务
-                 ↓
-              port/in
-                 ↑ 实现
-             application ──→ domain
-                 ↓
-              port/out
-                 ↑ 实现
-       infrastructure / integrations
+[模块职责](#模块职责) · [依赖方向](#依赖方向) · [分层示例](#分层示例) · [开发检查](#开发检查)
+
+## 依赖方向
+
+实线表示依赖，虚线表示实现接口。
+
+```mermaid
+flowchart LR
+    Entry["HTTP / 定时任务"] --> In["port/in"]
+    App["application"] -.-> In
+    App --> Domain["domain"]
+    App --> Out["port/out"]
+    Adapter["infrastructure / integrations"] -.-> Out
 ```
 
-## 各层边界
+| 层 | 责任 |
+| --- | --- |
+| `domain` | 业务模型、校验、费用和状态决策；仅依赖 JDK、领域类型与 `shared.Hashing` |
+| `port/in` | 对外用例与请求、结果类型，由 application 实现 |
+| `port/out` | 仓储、外部能力、快照编解码和只读配置的契约 |
+| `application` | 加载状态、调用领域行为、组织流程、保存结果，安排事务和锁 |
+| `infrastructure` | SQL 映射、配置绑定、序列化、资源加载与运行装配 |
+| `interfaces` | HTTP 参数校验、调用入站 port、映射响应 |
+| `integrations` | 外部协议、鉴权、传输和解析，实现业务模块的出站 port |
 
-| 层 | 责任 | 依赖约束 |
-| --- | --- | --- |
-| `domain` | 领域对象、准入与证据校验、费用计算、状态转换权限、限流和重试决策 | 仅依赖 JDK、领域类型与 `shared.Hashing`；不访问数据库、HTTP、Spring 或 JSON 库 |
-| `port/in` | 模块公开的用例契约及请求、结果类型 | 由 application 实现，供 Controller、定时任务和其他模块调用 |
-| `port/out` | 仓储、来源采集、模型编辑、投递、快照编码与只读运行输入的契约 | 由外侧适配器实现；接口不暴露 Spring 配置类、MyBatis 或 Jackson 类型 |
-| `application` | 加载状态、调用领域行为、组织跨模块用例、保存结果，安排事务、锁、租约和外部调用的顺序 | 依赖 domain 和 port；保留 Spring 的用例装配与事务支持，不直接依赖 Mapper、外部客户端或具体配置类 |
-| `infrastructure` | SQL、数据库映射、配置绑定、序列化、资源加载、定时触发与依赖装配 | MyBatis Mapper 直接实现仓储 port，SQL 与映射注解只存在于适配器中 |
-| `interfaces` | HTTP 参数校验、调用入站 port、映射响应 | 不调用具体 Service 或外部接入实现 |
-| `integrations` | AI、新闻来源、Telegram、Webhook 的协议、鉴权、传输和解析 | 实现业务模块的出站 port；业务状态决策交给 domain |
+domain 不访问数据库、HTTP、Spring 或 JSON 库。application 保留 Spring 装配与事务支持，通过 port 使用其他能力；Controller、定时任务和模块间协作也依赖 port。
 
-JSON 编解码通过 `SnapshotCodec`，实现为 `JacksonSnapshotCodec`。原先嵌在 Mapper 中的预算、来源、任务与日报数据类型归入其所属领域；用例结果不再嵌在具体 Service 中。
+application 可以根据领域返回结果决定下一步流程；资格校验、费用计算、状态转换权限等规则由 domain 决定。
 
 ## 模块职责
 
-| 模块 | 领域责任 | 主要用例与出站契约 |
-| --- | --- | --- |
-| `ingestion` | 来源注册与准入、素材版本身份、待办状态和重试规则 | `IngestionUseCase`；`SourceRegistry`、`LiveIngestionRepository`、`SourceCatalog`、`SourceCollector`、`SourceAdapter` |
-| `editorial` | 证据链、时效、题材与风险限制，引用、数字和稿件复验，模型费用估算 | `EditorialUseCase`；`EditorPort`、`ModelPricing`；规则在 `EditorialRules`、`ModelCost` |
-| `publication` | 发布意图与修订约束、确认历史、渠道频率、投递结果和人工核对规则 | `PublicationUseCase`；`PublicationRepository`、`DeliveryGateway`、`PublicationGuard`；决策在 `PublicationPolicy`、`ChannelLimit` |
-| `digest` | 已发布新闻的筛选、窗口、篇数与长度，日报快照和证据一致性 | `DigestUseCase`、`DigestEvidenceUseCase`、`DigestGuard`；`DigestRepository`；规则在各 Digest 领域策略中 |
-| `automation` | 预算限额和预占状态、编辑任务状态、运营就绪条件、证据版本检查与告警重试 | 各自动化用例 port；预算、任务、事件版本与告警仓储；application 编排采集→编辑→发布→日报 |
-| `growth` | 合成内容限制、目标授权、幂等键和邀请归因规则 | `GrowthUseCase`、`GrowthRepository`；规则在 `GrowthPolicy`，只用于离线演示 |
+代码位于 [com/globalnewsflash](../src/main/java/com/globalnewsflash)，每个模块按上述层次组织。
 
-来源注册的存取契约由 ingestion 拥有，自动化与证据复验通过 `SourceRegistry` 读取。模块间复用已公开的用例或只读领域快照，不直接引用其他模块的 application 实现。
+| 模块 | 业务职责 |
+| --- | --- |
+| `ingestion` | 来源注册与准入、素材版本身份、待办状态和重试 |
+| `editorial` | 证据链、时效、题材与风险检查，稿件复验和模型费用估算 |
+| `publication` | 发布意图、修订约束、确认历史、渠道频率与投递核对 |
+| `digest` | 已发布新闻的筛选、窗口、长度及日报快照一致性 |
+| `automation` | 预算、编辑任务、运营就绪条件与告警规则，编排主处理流程 |
+| `growth` | 合成内容、目标授权、幂等与邀请归因，仅用于离线演示 |
 
-## 事务与副作用
+来源注册归 ingestion 所有，其他模块通过 `SourceRegistry` 读取准入声明。业务快照归入所属 domain，用例结果定义在入站 port 中。
 
-- application 管理工作单元。模型调用前提交任务与预算预占，调用后在新的事务中结算；不把数据库锁跨越到真实模型请求。
-- 发布先提交 SENDING 状态，再调用投递 port。超时或结果不明保留 UNKNOWN，不能把重构后的异常当作自动重发许可。
-- 入队参与事件或日报的当前事务，保持快照与发布任务原子提交；原有锁顺序、CAS 与唯一键仍由仓储适配器执行。
-- 采集通过 port 获得不可变快照和批次，application 将整批待办与分页进度一起提交。
-- 领域策略接收已加载的状态和明确时间，返回决定或拒绝原因；不负责调用另一个 Service、发送消息或写表。
+外部接入集中在 `integrations/ai`、`sources`、`telegram` 和 `webhook`；公共 HTTP 传输放在 `integrations/http`。接入实现负责协议处理，业务上的准入、预算和重试决定留在领域中。
 
-## 自动检查
+## 分层示例
+
+以 publication 为例，目录与职责对应如下：
+
+```text
+publication/
+  domain/           PublicationOperation、PublicationPolicy、ChannelLimit
+  port/
+    in/             PublicationUseCase
+    out/            PublicationRepository、DeliveryGateway、PublicationGuard
+  application/      PublicationService
+  infrastructure/   MyBatis 映射、运行配置、调度与合成投递
+  interfaces/       PublicationController
+```
+
+一次发布请求按以下职责流转：
+
+1. `PublicationController` 校验 HTTP 参数，通过 `PublicationUseCase` 调用用例。
+2. `PublicationService` 加载状态，调用 `PublicationPolicy`、`ChannelLimit` 做领域决策。
+3. 用例通过 `PublicationRepository` 保存意图、尝试和结果，安排事务与锁。
+4. 需要真实投递时调用 `DeliveryGateway`，具体协议由 `TelegramDeliveryGateway` 实现。
+
+其他模块按实际需要采用同样的分层，不建立没有用途的空层。对外契约放在 `port`，MyBatis Mapper 作为技术适配接口留在 infrastructure，SQL 注解不进入 port。
+
+## 事务与故障边界
+
+- **模型调用**：先提交任务与预算预占，再发起请求，最后在新事务中结算；数据库锁不跨越 HTTP 调用。
+- **发布投递**：先提交 SENDING，再调用投递 port；结果不明进入 UNKNOWN，由人工核对。
+- **原子入队**：事件或日报快照与发布任务在同一事务中提交，仓储保留唯一键、锁与 CAS 语义。
+- **分批采集**：不可变快照、整批待办与分页进度一起提交，完整快照处理后再推进游标。
+
+MyBatis Mapper 直接实现仓储 port；`JacksonSnapshotCodec` 实现 `SnapshotCodec`。SQL、JSON 和外部客户端不进入领域层。
+
+模型超时后的预算核对、投递 UNKNOWN 后的消息核对属于两条独立恢复流程。application 负责协调步骤，领域保留各自状态规则；人工操作入口见[费用与投递核对](operations.md#费用与投递核对)。
+
+## 开发检查
 
 在项目根目录执行：
 
@@ -59,6 +93,30 @@ JSON 编解码通过 `SnapshotCodec`，实现为 `JacksonSnapshotCodec`。原先
 .\mvnw.cmd -B -ntp clean verify
 ```
 
-`ArchitectureTest` 检查 domain 的依赖纯净性、application 对适配器的隔离、port 的独立性、入口对用例 port 的依赖，以及 application 之间不能直接引用具体实现。领域单元测试独立于 Spring 验证预算、发布限流、结果未知、日报筛选和采集重试；原有集成测试继续验证事务、去重、授权与恢复。
+[ArchitectureTest](../src/test/java/com/globalnewsflash/architecture/ArchitectureTest.java) 检查领域依赖、port 独立性、入口和 application 对具体实现的隔离。领域测试验证规则，集成测试验证事务、去重、鉴权与恢复。
 
-新增业务规则放入所属 domain，并添加领域测试；新增用例在 `port/in` 声明并由 application 编排；新增数据库或外部能力在 `port/out` 声明，由适配器实现。
+修改代码时按职责选择位置：
+
+| 变更 | 实现位置 |
+| --- | --- |
+| 新增业务规则、状态或计算 | 所属 domain，并补充领域测试 |
+| 新增公开用例 | `port/in` 声明，application 编排 |
+| 新增仓储或外部能力 | `port/out` 声明，由适配器实现 |
+| 新增供应商 | 对应 integrations 包，实现已有出站 port，并补充模拟请求测试 |
+| 新增配置 | infrastructure / integrations 绑定；领域接收明确的输入 |
+| 修改数据库结构 | 在 `db/migration` 追加新版本，不合并或重写已执行迁移 |
+
+## 离线演示
+
+按首页构建运行包后，可运行固定时钟下的合成场景：
+
+```powershell
+java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar `
+  --spring.profiles.active=offline,demo `
+  --spring.main.web-application-type=none `
+  --news.demo.enabled=true `
+  --news.runtime.mode=OFFLINE `
+  --news.runtime.external-enabled=false
+```
+
+演示输出 `SYNTHETIC_DEMO_RESULT` 后退出，使用合成数据，不调用真实外部服务。
