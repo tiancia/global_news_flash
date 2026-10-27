@@ -2,12 +2,14 @@ package com.globalnewsflash.integrations.sources;
 
 import static com.globalnewsflash.shared.Hashing.sha256;
 
-import com.globalnewsflash.ingestion.application.LiveIngestionService.SourceSpec;
-import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourceMaterial.Fact;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
+import com.globalnewsflash.ingestion.domain.SourceSpec;
+import com.globalnewsflash.ingestion.port.out.IngestionSettings;
+import com.globalnewsflash.ingestion.port.in.IngestionUseCase;
+import com.globalnewsflash.ingestion.port.out.SourceCollector;
 import java.net.URI;
 import java.time.Instant;
 import java.time.ZonedDateTime;
@@ -19,21 +21,9 @@ import java.util.List;
 import java.util.Set;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Network collector has no database responsibility; its complete batch is committed by LiveIngestionService. */
-public final class LiveSourceCollector {
-    public static final class CollectionFailure extends RuntimeException {
-        private final String code;
-        public CollectionFailure(String code) { super(code); this.code = code; }
-        public String code() { return code; }
-    }
-    public static final class HeartbeatFailure extends RuntimeException {
-        public HeartbeatFailure() { super("AUTOMATION_HEARTBEAT_FAILED"); }
-    }
-    public record Snapshot(String payload, String etag, String lastModified, boolean notModified) {}
-    public record Batch(List<SourceMaterial> materials, String etag, String lastModified,
-            String cursor, boolean notModified, int nextOffset, boolean complete) {}
-
-    private final LiveIngestionProperties properties;
+/** Network collector has no database responsibility; its complete batch is committed by IngestionUseCase. */
+public final class LiveSourceCollector implements SourceCollector {
+    private final IngestionSettings properties;
     private final BoundedHttpsFetcher fetcher;
     private final ArticleTextExtractor articles;
     private final UsgsAdapter usgs;
@@ -41,7 +31,7 @@ public final class LiveSourceCollector {
     private final GdeltAdapter gdelt;
     private final SyndicationFeedParser syndication = new SyndicationFeedParser();
 
-    public LiveSourceCollector(LiveIngestionProperties properties, JsonMapper json) {
+    public LiveSourceCollector(IngestionSettings properties, JsonMapper json) {
         this.properties = properties;
         fetcher = new BoundedHttpsFetcher(properties);
         articles = new ArticleTextExtractor(properties);

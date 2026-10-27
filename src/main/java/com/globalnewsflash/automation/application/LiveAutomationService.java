@@ -1,15 +1,21 @@
 package com.globalnewsflash.automation.application;
 
-import com.globalnewsflash.automation.infrastructure.LiveAutomationMapper;
-import com.globalnewsflash.automation.infrastructure.OperatingProperties;
-import com.globalnewsflash.automation.infrastructure.PipelineMapper;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.integrations.ai.AiProviderSettings;
-import com.globalnewsflash.digest.application.DigestService;
-import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
-import com.globalnewsflash.ingestion.application.LiveIngestionService;
-import com.globalnewsflash.publication.application.PublicationService;
-import com.globalnewsflash.integrations.telegram.TelegramProperties;
+import com.globalnewsflash.automation.domain.Alert;
+import com.globalnewsflash.automation.domain.AutomationReadiness;
+import com.globalnewsflash.automation.port.in.AutomationUseCase;
+import com.globalnewsflash.automation.port.in.BudgetUseCase;
+import com.globalnewsflash.automation.port.in.LivePipelineUseCase;
+import com.globalnewsflash.automation.port.in.PipelineUseCase;
+import com.globalnewsflash.automation.port.out.LiveAutomationRepository;
+import com.globalnewsflash.automation.port.out.OperatingSettings;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
+import com.globalnewsflash.digest.port.in.DigestUseCase;
+import com.globalnewsflash.editorial.port.out.ModelPricing;
+import com.globalnewsflash.ingestion.port.in.IngestionUseCase;
+import com.globalnewsflash.ingestion.port.out.IngestionSettings;
+import com.globalnewsflash.ingestion.port.out.SourceRegistry;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
+import com.globalnewsflash.publication.port.out.PublicationTarget;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -23,27 +29,27 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** One bounded cycle, also exposed through the authenticated operations API. */
 @Service
-public class LiveAutomationService {
-    private final RuntimeProperties runtime;
-    private final OperatingProperties operating;
-    private final AiProviderSettings ai;
-    private final TelegramProperties telegram;
-    private final LiveIngestionProperties ingestionProperties;
-    private final LiveIngestionService ingestion;
-    private final LivePipelineService pipeline;
-    private final PublicationService publications;
-    private final BudgetService budgets;
-    private final LiveAutomationMapper mapper;
+public class LiveAutomationService implements AutomationUseCase {
+    private final RuntimeSettings runtime;
+    private final OperatingSettings operating;
+    private final ModelPricing ai;
+    private final PublicationTarget telegram;
+    private final IngestionSettings ingestionProperties;
+    private final IngestionUseCase ingestion;
+    private final LivePipelineUseCase pipeline;
+    private final PublicationUseCase publications;
+    private final BudgetUseCase budgets;
+    private final LiveAutomationRepository mapper;
     private final Clock clock;
     private final TransactionTemplate tx;
-    private final DigestService digest;
-    private final PipelineMapper evidence;
+    private final DigestUseCase digest;
+    private final SourceRegistry evidence;
 
-    public LiveAutomationService(RuntimeProperties runtime, OperatingProperties operating,
-            AiProviderSettings ai, TelegramProperties telegram, LiveIngestionProperties ingestionProperties,
-            LiveIngestionService ingestion, LivePipelineService pipeline, PublicationService publications,
-            BudgetService budgets, LiveAutomationMapper mapper, Clock clock, PlatformTransactionManager manager,
-            DigestService digest, PipelineMapper evidence) {
+    public LiveAutomationService(RuntimeSettings runtime, OperatingSettings operating,
+            ModelPricing ai, PublicationTarget telegram, IngestionSettings ingestionProperties,
+            IngestionUseCase ingestion, LivePipelineUseCase pipeline, PublicationUseCase publications,
+            BudgetUseCase budgets, LiveAutomationRepository mapper, Clock clock, PlatformTransactionManager manager,
+            DigestUseCase digest, SourceRegistry evidence) {
         this.runtime = runtime; this.operating = operating; this.ai = ai; this.telegram = telegram;
         this.ingestionProperties = ingestionProperties; this.ingestion = ingestion; this.pipeline = pipeline;
         this.publications = publications; this.budgets = budgets; this.mapper = mapper; this.clock = clock;
@@ -53,30 +59,18 @@ public class LiveAutomationService {
     }
 
     public List<String> readinessReasons() {
-        var reasons = new ArrayList<String>();
-        if (!runtime.live()) reasons.add("LIVE_EXTERNAL_ACCESS_DISABLED");
-        reasons.addAll(operating.problems());
         var aiReasons = ai.readinessReasons();
-        reasons.addAll(aiReasons);
+        Long estimate = null;
+        boolean invalidEstimate = false;
         if (aiReasons.isEmpty()) {
-            try {
-                if (ai.estimatedRequestMicros() > operating.getDailyBudgetMicros())
-                    reasons.add("REQUEST_RESERVATION_EXCEEDS_DAILY_BUDGET");
-            } catch (RuntimeException invalidPrice) { reasons.add("AI_COST_LIMIT_INVALID"); }
+            try { estimate = ai.estimatedRequestMicros(); }
+            catch (RuntimeException invalid) { invalidEstimate = true; }
         }
-        if (!ingestionProperties.isEnabled()) reasons.add("INGESTION_DISABLED");
-        if (runtime.live() && evidence.sources().stream().noneMatch(s -> !s.synthetic() && s.enabled() && s.approved()))
-            reasons.add("NO_APPROVED_SOURCE_ENABLED");
-        if (telegram.getChatId() == null || telegram.getChatId().isBlank()) reasons.add("TELEGRAM_TARGET_MISSING");
-        if (operating.getJobLease() != null && ai.getTimeout() != null
-                && operating.getJobLease().compareTo(ai.getTimeout().plusSeconds(30)) <= 0)
-            reasons.add("EDITOR_LEASE_TOO_SHORT");
-        if (operating.getJobLease() != null && ingestionProperties.getInboxLeaseSeconds() * 1000L
-                <= operating.getJobLease().toMillis()) reasons.add("INBOX_LEASE_TOO_SHORT");
-        if (operating.getCycleLease() != null && operating.getCycleLease().toMillis()
-                <= ingestionProperties.getRequestTimeoutSeconds() * 1000L + 30_000L)
-            reasons.add("CYCLE_LEASE_TOO_SHORT");
-        return List.copyOf(reasons);
+        boolean approvedSource = !runtime.live() || evidence.sources().stream().anyMatch(s -> !s.synthetic() && s.enabled() && s.approved());
+        return new AutomationReadiness(runtime.live(), operating.problems(), aiReasons, estimate, invalidEstimate,
+                operating.getDailyBudgetMicros(), ingestionProperties.isEnabled(), approvedSource, telegram.getChatId(),
+                operating.getJobLease(), ai.getTimeout(), ingestionProperties.getInboxLeaseSeconds() * 1000L,
+                operating.getCycleLease(), ingestionProperties.getRequestTimeoutSeconds() * 1000L).reasons();
     }
 
     public Map<String, Object> status() {
@@ -105,12 +99,12 @@ public class LiveAutomationService {
         int processed = 0;
         String state = "COMPLETED";
         String error = null;
-        var results = new ArrayList<PipelineService.PipelineRun>();
+        var results = new ArrayList<PipelineUseCase.PipelineRun>();
         try {
             pipeline.recoverExpired();
             var polling = ingestion.poll(() -> renew(runId));
             for (var source : polling.sources()) {
-                if ("FAILED".equals(source.state())) mapper.insertAlert(new LiveAutomationMapper.Alert(
+                if ("FAILED".equals(source.state())) mapper.insertAlert(new Alert(
                         UUID.randomUUID().toString(), "SOURCE_ERROR", source.sourceId(), source.code(), clock.millis()));
             }
             renew(runId);
@@ -125,7 +119,7 @@ public class LiveAutomationService {
                 var item = pending.getFirst();
                 try {
                     var result = pipeline.process(List.of(item.material()), operating.policy(),
-                            new PipelineService.BudgetAllocation(periodId, ai.estimatedRequestMicros()));
+                            new PipelineUseCase.BudgetAllocation(periodId, ai.estimatedRequestMicros()));
                     if ("DEFERRED".equals(result.state())) ingestion.retry(item.id(), result.reasons().getFirst());
                     else ingestion.complete(item.id(), result.state(), result.reasons().isEmpty() ? "QUEUED" : result.reasons().getFirst());
                     results.add(result);
@@ -133,7 +127,7 @@ public class LiveAutomationService {
                 } catch (RuntimeException failure) {
                     // A committed EDITING job prevents a duplicate model call on a later inbox attempt.
                     ingestion.retry(item.id(), "PIPELINE_PROCESSING_FAILED");
-                    mapper.insertAlert(new LiveAutomationMapper.Alert(UUID.randomUUID().toString(),
+                    mapper.insertAlert(new Alert(UUID.randomUUID().toString(),
                             "PIPELINE_ERROR", item.material().eventKey(), "PIPELINE_PROCESSING_FAILED", clock.millis()));
                 }
             }
@@ -144,7 +138,7 @@ public class LiveAutomationService {
                     "polling", polling, "results", results, "telegramDeliveryEnabled", telegram.isEnabled());
         } catch (RuntimeException failure) {
             state = "FAILED"; error = "AUTOMATION_CYCLE_FAILED";
-            mapper.insertAlert(new LiveAutomationMapper.Alert(UUID.randomUUID().toString(), "AUTOMATION_ERROR",
+            mapper.insertAlert(new Alert(UUID.randomUUID().toString(), "AUTOMATION_ERROR",
                     runId, error, clock.millis()));
             return Map.of("id", runId, "state", state, "reason", error, "processed", processed);
         } finally {

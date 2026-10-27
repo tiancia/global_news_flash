@@ -1,13 +1,17 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.editorial.application.EditorFailure;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import com.globalnewsflash.editorial.domain.EditorFailure;
 import com.globalnewsflash.editorial.domain.EditorRequest;
 import com.globalnewsflash.editorial.domain.EditorResponse;
+import java.io.ByteArrayOutputStream;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -19,9 +23,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 class DeepSeekEditorTest {
     private final JsonMapper json = new JsonMapper();

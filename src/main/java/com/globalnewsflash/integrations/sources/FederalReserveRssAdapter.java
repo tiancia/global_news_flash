@@ -1,8 +1,8 @@
 package com.globalnewsflash.integrations.sources;
 
-import com.globalnewsflash.ingestion.application.SourceAdapter;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
+import com.globalnewsflash.ingestion.port.out.SourceAdapter;
 import java.io.StringReader;
 import java.net.URI;
 import java.time.Instant;

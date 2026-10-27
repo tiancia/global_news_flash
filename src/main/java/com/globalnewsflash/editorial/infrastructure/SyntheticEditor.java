@@ -1,10 +1,10 @@
 package com.globalnewsflash.editorial.infrastructure;
 
-import com.globalnewsflash.editorial.application.EditorPort;
 import com.globalnewsflash.editorial.domain.EditorRequest;
 import com.globalnewsflash.editorial.domain.EditorResponse;
-import org.springframework.stereotype.Component;
+import com.globalnewsflash.editorial.port.out.EditorPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
 
 /** Deterministic fixture editor. It makes no claims about real model quality or semantic verification. */
 @Component

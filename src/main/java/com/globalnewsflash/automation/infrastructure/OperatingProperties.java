@@ -1,5 +1,6 @@
 package com.globalnewsflash.automation.infrastructure;
 
+import com.globalnewsflash.automation.port.out.OperatingSettings;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import java.time.Duration;
 import java.util.List;
@@ -8,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** Conservative initial settings are editable operating inputs, not validated editorial policy. */
 @ConfigurationProperties("news.automation")
-public class OperatingProperties {
+public class OperatingProperties implements OperatingSettings {
     private boolean enabled;
     private boolean policyReady;
     private String policyVersion = "initial-v1";
@@ -28,15 +29,8 @@ public class OperatingProperties {
     }
 
     public List<String> problems() {
-        var reasons = new java.util.ArrayList<String>();
-        if (!policy().configured()) reasons.add("OPERATING_POLICY_NOT_READY");
-        if (maxCharacters > 4096 || maxCharacters < 200) reasons.add("INVALID_MESSAGE_LENGTH");
-        if (batchSize < 1 || batchSize > 100) reasons.add("INVALID_BATCH_SIZE");
-        if (dailyBudgetMicros <= 0 || dailyRequests <= 0) reasons.add("INVALID_DAILY_BUDGET");
-        if (jobLease == null || jobLease.compareTo(Duration.ofSeconds(30)) < 0
-                || cycleLease == null || cycleLease.compareTo(jobLease) <= 0) reasons.add("INVALID_AUTOMATION_LEASE");
-        if (revisionMode == null || !Set.of("HOLD", "EDIT", "UPDATE", "CORRECTION").contains(revisionMode)) reasons.add("INVALID_REVISION_MODE");
-        return List.copyOf(reasons);
+        return new com.globalnewsflash.automation.domain.OperatingPolicy(policy(), batchSize, dailyBudgetMicros,
+                dailyRequests, jobLease, cycleLease, revisionMode).problems();
     }
 
     public boolean isEnabled() { return enabled; }

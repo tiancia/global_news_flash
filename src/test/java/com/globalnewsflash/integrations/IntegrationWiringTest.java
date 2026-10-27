@@ -1,7 +1,9 @@
 package com.globalnewsflash.integrations;
 
-import com.globalnewsflash.automation.application.NotificationGateway;
-import com.globalnewsflash.editorial.application.EditorPort;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.globalnewsflash.automation.port.out.NotificationGateway;
+import com.globalnewsflash.editorial.port.out.EditorPort;
 import com.globalnewsflash.integrations.ai.DeepSeekEditor;
 import com.globalnewsflash.integrations.ai.DeepSeekProperties;
 import com.globalnewsflash.integrations.ai.OpenAiProperties;
@@ -9,13 +11,12 @@ import com.globalnewsflash.integrations.telegram.TelegramDeliveryGateway;
 import com.globalnewsflash.integrations.telegram.TelegramProperties;
 import com.globalnewsflash.integrations.webhook.AlertProperties;
 import com.globalnewsflash.integrations.webhook.WebhookNotificationGateway;
-import com.globalnewsflash.publication.application.DeliveryGateway;
+import com.globalnewsflash.publication.port.out.DeliveryGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
-import static org.assertj.core.api.Assertions.assertThat;
 
 /** Checks component discovery and the existing configuration keys without allowing external traffic. */
 @SpringBootTest(properties = {

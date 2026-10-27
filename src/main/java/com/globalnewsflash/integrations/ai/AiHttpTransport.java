@@ -1,6 +1,6 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.editorial.application.EditorFailure;
+import com.globalnewsflash.editorial.domain.EditorFailure;
 import com.globalnewsflash.integrations.http.BoundedBodySubscriber;
 import java.io.IOException;
 import java.net.http.HttpClient;

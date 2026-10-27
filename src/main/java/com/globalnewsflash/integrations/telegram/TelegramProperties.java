@@ -1,5 +1,6 @@
 package com.globalnewsflash.integrations.telegram;
 
+import com.globalnewsflash.publication.port.out.PublicationTarget;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -8,7 +9,7 @@ import org.springframework.stereotype.Component;
 /** Secrets are only supplied through external configuration and never included in diagnostics. */
 @Component
 @ConfigurationProperties("news.telegram")
-public final class TelegramProperties {
+public final class TelegramProperties implements PublicationTarget {
     private boolean enabled;
     private String botToken = "";
     private String chatId = "";

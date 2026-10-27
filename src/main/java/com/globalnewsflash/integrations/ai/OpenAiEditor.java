@@ -1,19 +1,19 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.editorial.application.EditorFailure;
-import com.globalnewsflash.editorial.application.EditorPort;
+import com.globalnewsflash.editorial.domain.EditorFailure;
 import com.globalnewsflash.editorial.domain.EditorRequest;
 import com.globalnewsflash.editorial.domain.EditorResponse;
+import com.globalnewsflash.editorial.port.out.EditorPort;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;

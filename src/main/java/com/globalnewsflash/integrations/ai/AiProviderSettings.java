@@ -1,19 +1,20 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
 import com.globalnewsflash.editorial.domain.EditorResponse;
+import com.globalnewsflash.editorial.port.out.ModelPricing;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
 /** Selects the active provider's readiness, request limit, and configured cost estimate. */
 @Component
-public class AiProviderSettings {
-    private final RuntimeProperties runtime;
+public class AiProviderSettings implements ModelPricing {
+    private final RuntimeSettings runtime;
     private final OpenAiProperties openai;
     private final DeepSeekProperties deepseek;
 
-    public AiProviderSettings(RuntimeProperties runtime, OpenAiProperties openai, DeepSeekProperties deepseek) {
+    public AiProviderSettings(RuntimeSettings runtime, OpenAiProperties openai, DeepSeekProperties deepseek) {
         this.runtime = runtime;
         this.openai = openai;
         this.deepseek = deepseek;

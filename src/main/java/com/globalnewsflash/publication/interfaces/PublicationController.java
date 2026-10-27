@@ -1,7 +1,6 @@
 package com.globalnewsflash.publication.interfaces;
 
-import com.globalnewsflash.publication.application.PublicationService;
-import com.globalnewsflash.integrations.telegram.TelegramMessageText;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -16,9 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/ops")
 public class PublicationController {
-    private final PublicationService publication;
+    private final PublicationUseCase publication;
 
-    public PublicationController(PublicationService publication) {
+    public PublicationController(PublicationUseCase publication) {
         this.publication = publication;
     }
 
@@ -29,7 +28,7 @@ public class PublicationController {
     @GetMapping("/publications/{id}/preview")
     public Object preview(@PathVariable String id) {
         var operation = publication.get(id);
-        return Map.of("operation", operation, "telegramText", TelegramMessageText.render(operation));
+        return Map.of("operation", operation, "telegramText", publication.previewText(id));
     }
     @GetMapping("/publications/{id}/attempts") public Object attempts(@PathVariable String id) { return publication.attempts(id); }
     @GetMapping("/alerts") public Object alerts() { return publication.alerts(); }

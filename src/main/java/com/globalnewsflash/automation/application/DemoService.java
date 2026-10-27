@@ -1,67 +1,45 @@
 package com.globalnewsflash.automation.application;
 
-import com.globalnewsflash.editorial.domain.EditorialPolicy;
-import com.globalnewsflash.growth.application.GrowthService;
-import com.globalnewsflash.ingestion.application.SourceAdapter;
-import com.globalnewsflash.ingestion.domain.SourceMaterial;
-import com.globalnewsflash.publication.application.PublicationService;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import com.globalnewsflash.automation.domain.DemoScenario;
+import com.globalnewsflash.automation.port.in.BudgetUseCase;
+import com.globalnewsflash.automation.port.in.DemoUseCase;
+import com.globalnewsflash.automation.port.in.PipelineUseCase;
+import com.globalnewsflash.automation.port.out.DemoFixtures;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
+import com.globalnewsflash.growth.port.in.GrowthUseCase;
+import com.globalnewsflash.ingestion.port.out.SourceAdapter;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
-import java.util.Set;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 /** Explicit fictional scenarios. The values here are test inputs, not operating policy. */
 @Service
-public class DemoService {
-    public enum Scenario { VALID, REVISED, STALE, DISCOVERY, TITLE_ONLY }
-    public record DemoResult(String mode, Scenario scenario, PipelineService.PipelineRun pipeline,
-                             String deliveryState, String messageId) {}
-    private final PipelineService pipeline;
-    private final PublicationService publication;
+public class DemoService implements DemoUseCase {
+    private final PipelineUseCase pipeline;
+    private final DemoFixtures fixtures;
+    private final PublicationUseCase publication;
     private final List<SourceAdapter> adapters;
-    private final GrowthService growth;
-    private final BudgetService budgets;
+    private final GrowthUseCase growth;
+    private final BudgetUseCase budgets;
     private final Clock clock;
-    private final RuntimeProperties runtime;
+    private final RuntimeSettings runtime;
 
-    public DemoService(PipelineService pipeline, PublicationService publication, List<SourceAdapter> adapters,
-                       GrowthService growth, BudgetService budgets, Clock clock, RuntimeProperties runtime) {
+    public DemoService(PipelineUseCase pipeline, PublicationUseCase publication, List<SourceAdapter> adapters,
+                       GrowthUseCase growth, BudgetUseCase budgets, Clock clock, RuntimeSettings runtime, DemoFixtures fixtures) {
         this.pipeline = pipeline; this.publication = publication; this.adapters = List.copyOf(adapters);
         this.growth = growth; this.budgets = budgets; this.clock = clock;
         this.runtime = runtime;
+        this.fixtures = fixtures;
     }
 
-    public DemoResult run(Scenario scenario) {
+    public DemoResult run(DemoScenario scenario) {
         if (!"OFFLINE".equals(runtime.getMode())) throw new IllegalStateException("Demo requires OFFLINE mode");
-        String source = switch (scenario) { case DISCOVERY -> "gdelt"; case TITLE_ONLY -> "fed"; default -> "usgs"; };
-        String file = switch (scenario) {
-            case REVISED -> "usgs-revised.json";
-            case DISCOVERY -> "gdelt.json";
-            case TITLE_ONLY -> "fed.xml";
-            default -> "usgs.json";
-        };
-        List<SourceMaterial> materials = adapters.stream().filter(a -> a.sourceId().equals(source)).findFirst().orElseThrow()
-                .parse(fixture(file), clock.instant(), true);
-        // The stale scenario has its own event identity so it cannot invalidate the valid demo.
-        if (scenario == Scenario.STALE) {
-            materials = materials.stream().map(m -> new SourceMaterial(m.sourceId(), m.externalId(),
-                    m.eventKey() + ":stale", m.canonicalUrl(), m.headline(), m.topic(), m.producer(),
-                    m.evidenceChainId(), m.occurredAt(), m.publishedAt(), m.sourceUpdatedAt(),
-                    m.discoveredAt(), m.facts(), m.discoveryOnly(), true)).toList();
-        }
-        var policy = new EditorialPolicy("demo-" + scenario.name().toLowerCase() + "-v1",
-                scenario == Scenario.STALE ? Duration.ofSeconds(1) : Duration.ofHours(48),
-                2000, 1, Set.of("EARTHQUAKE", "OFFICIAL_ANNOUNCEMENT"), true);
-        // Revision keeps the original policy identity: this is a changed source version.
-        if (scenario == Scenario.REVISED) policy = new EditorialPolicy("demo-valid-v1", Duration.ofHours(48),
-                2000, 1, Set.of("EARTHQUAKE", "OFFICIAL_ANNOUNCEMENT"), true);
+        var materials = scenario.materials(adapters.stream().filter(a -> a.sourceId().equals(scenario.source())).findFirst().orElseThrow()
+                .parse(fixtures.load(scenario.fixture()), clock.instant(), true));
+        var policy = scenario.policy();
         budgets.configureSyntheticPeriod("demo-explicit-period", 1000, 20);
-        var run = pipeline.process(materials, policy, new PipelineService.BudgetAllocation("demo-explicit-period", 100));
+        var run = pipeline.process(materials, policy, new PipelineUseCase.BudgetAllocation("demo-explicit-period", 100));
         String state = null;
         String messageId = null;
         if (run.publicationId() != null) {
@@ -82,9 +60,5 @@ public class DemoService {
         growth.recordJoin(1002L, null);
     }
 
-    private static String fixture(String file) {
-        try (var stream = new ClassPathResource("fixtures/" + file).getInputStream()) {
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException failure) { throw new IllegalStateException("Local fixture unavailable", failure); }
-    }
+
 }

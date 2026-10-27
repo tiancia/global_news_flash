@@ -1,5 +1,7 @@
 package com.globalnewsflash.automation.infrastructure;
 
+import com.globalnewsflash.automation.domain.EventVersion;
+import com.globalnewsflash.automation.port.out.PipelineRepository;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -8,22 +10,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
-public interface PipelineMapper {
-    record SourceRow(String id, String sourceId, boolean enabled, boolean approved, boolean synthetic,
-                     String licenseVersion, String permittedProducers, String scopeDescription) {}
-    record EventVersion(String id, String eventKey, int eventVersion, String fingerprint,
-                        String editorialState, String decisionPayload, String policyVersion,
-                        String publicationId, String materialsPayload, String policyPayload, String sourcesPayload,
-                        String budgetReservationId, long createdAt) {}
-
-    @Select("SELECT * FROM news_source ORDER BY id")
-    List<SourceRow> sources();
-
-    @Select("SELECT * FROM news_source ORDER BY id FOR UPDATE")
-    List<SourceRow> lockSources();
-
-    @Update("UPDATE news_source SET enabled=#{enabled} WHERE id=#{id}")
-    int enableSource(@Param("id") String id, @Param("enabled") boolean enabled);
+public interface PipelineMapper extends PipelineRepository {
 
     @Insert("INSERT INTO news_event(event_key,latest_version) VALUES(#{key},0)")
     void insertEvent(String key);

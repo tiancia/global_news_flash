@@ -1,6 +1,6 @@
 package com.globalnewsflash.publication.infrastructure;
 
-import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,14 +13,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 @ConditionalOnProperty(name = "news.publication.worker-enabled", havingValue = "true")
 public class PublicationWorkerConfiguration {
     @Bean
-    PublicationWorker publicationWorker(PublicationService service) {
+    PublicationWorker publicationWorker(PublicationUseCase service) {
         return new PublicationWorker(service);
     }
 
     public static final class PublicationWorker {
-        private final PublicationService service;
+        private final PublicationUseCase service;
 
-        PublicationWorker(PublicationService service) {
+        PublicationWorker(PublicationUseCase service) {
             this.service = service;
         }
 

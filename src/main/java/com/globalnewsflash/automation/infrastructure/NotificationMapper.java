@@ -1,12 +1,12 @@
 package com.globalnewsflash.automation.infrastructure;
 
+import com.globalnewsflash.automation.domain.Notice;
+import com.globalnewsflash.automation.port.out.NotificationRepository;
 import java.util.List;
 import org.apache.ibatis.annotations.*;
 
 @Mapper
-public interface NotificationMapper {
-    record Notice(String id, String category, String subjectId, String reasonCode, String state,
-                  int attempts, long nextAttemptAt, String lastError) {}
+public interface NotificationMapper extends NotificationRepository {
     @Insert("INSERT INTO ops_notification VALUES(#{id},#{category},#{subjectId},#{reasonCode},'PENDING',0,0,NULL)")
     void insert(Notice notice);
     @Select("SELECT * FROM ops_notification WHERE state IN ('PENDING','SENDING') AND next_attempt_at<=#{now} ORDER BY next_attempt_at,id LIMIT 10")

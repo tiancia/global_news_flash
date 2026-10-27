@@ -1,8 +1,8 @@
 package com.globalnewsflash.digest.infrastructure;
 
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.digest.application.DigestService;
-import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.digest.port.in.DigestUseCase;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -13,11 +13,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 @EnableScheduling
 @ConditionalOnProperty(name = "news.digest.enabled", havingValue = "true")
 public class DigestScheduling {
-    private final DigestService digests;
-    private final PublicationService publications;
+    private final DigestUseCase digests;
+    private final PublicationUseCase publications;
     private final RuntimeProperties runtime;
 
-    public DigestScheduling(DigestService digests, PublicationService publications, RuntimeProperties runtime) {
+    public DigestScheduling(DigestUseCase digests, PublicationUseCase publications, RuntimeProperties runtime) {
         this.digests = digests; this.publications = publications; this.runtime = runtime;
     }
 

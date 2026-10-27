@@ -1,11 +1,11 @@
 package com.globalnewsflash.automation.interfaces;
 
-import com.globalnewsflash.automation.application.BudgetService;
-import com.globalnewsflash.automation.application.PipelineService;
-import com.globalnewsflash.automation.application.LiveAutomationService;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.growth.application.GrowthService;
-import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.automation.port.in.AutomationUseCase;
+import com.globalnewsflash.automation.port.in.BudgetUseCase;
+import com.globalnewsflash.automation.port.in.PipelineUseCase;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
+import com.globalnewsflash.growth.port.in.GrowthUseCase;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,16 +17,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/ops")
 public class ReportController {
-    private final PipelineService pipeline;
-    private final PublicationService publication;
-    private final GrowthService growth;
-    private final BudgetService budgets;
-    private final RuntimeProperties runtime;
-    private final LiveAutomationService automation;
+    private final PipelineUseCase pipeline;
+    private final PublicationUseCase publication;
+    private final GrowthUseCase growth;
+    private final BudgetUseCase budgets;
+    private final RuntimeSettings runtime;
+    private final AutomationUseCase automation;
     private final Clock clock;
 
-    public ReportController(PipelineService pipeline, PublicationService publication, GrowthService growth,
-                            BudgetService budgets, RuntimeProperties runtime, LiveAutomationService automation, Clock clock) {
+    public ReportController(PipelineUseCase pipeline, PublicationUseCase publication, GrowthUseCase growth,
+                            BudgetUseCase budgets, RuntimeSettings runtime, AutomationUseCase automation, Clock clock) {
         this.pipeline = pipeline;
         this.publication = publication;
         this.growth = growth;

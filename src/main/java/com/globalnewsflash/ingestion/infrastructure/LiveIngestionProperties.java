@@ -1,11 +1,12 @@
 package com.globalnewsflash.ingestion.infrastructure;
 
+import com.globalnewsflash.ingestion.port.out.IngestionSettings;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** External collection is opt-in; approval and licensing are independent of enabling a source. */
 @ConfigurationProperties("news.ingestion")
-public class LiveIngestionProperties {
+public class LiveIngestionProperties implements IngestionSettings {
     private boolean enabled;
     private long pollDelayMs = 60_000;
     private long sourcePollIntervalMs = 300_000;

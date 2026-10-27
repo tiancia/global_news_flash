@@ -1,6 +1,10 @@
 package com.globalnewsflash.integrations.webhook;
 
-import com.globalnewsflash.automation.application.NotificationGateway.Notification;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import com.globalnewsflash.automation.port.out.NotificationGateway.Notification;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -18,9 +22,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 class WebhookNotificationGatewayTest {
     private final AlertProperties properties = configured();

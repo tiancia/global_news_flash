@@ -1,7 +1,7 @@
 package com.globalnewsflash.integrations.sources;
 
-import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
 import com.globalnewsflash.ingestion.domain.SourceMaterial.Fact;
+import com.globalnewsflash.ingestion.port.out.IngestionSettings;
 import java.util.ArrayList;
 import java.util.List;
 import org.jsoup.Jsoup;
@@ -9,8 +9,8 @@ import org.jsoup.nodes.Element;
 
 /** Extracts bounded source text. Extracted passages are source claims, not independent fact verification. */
 final class ArticleTextExtractor {
-    private final LiveIngestionProperties properties;
-    ArticleTextExtractor(LiveIngestionProperties properties) { this.properties = properties; }
+    private final IngestionSettings properties;
+    ArticleTextExtractor(IngestionSettings properties) { this.properties = properties; }
 
     List<Fact> article(String html, String selector) {
         if (selector == null || selector.isBlank()) throw new BoundedHttpsFetcher.FetchFailure("ARTICLE_SELECTOR_REQUIRED");

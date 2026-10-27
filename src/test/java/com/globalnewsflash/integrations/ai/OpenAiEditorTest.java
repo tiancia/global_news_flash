@@ -1,6 +1,10 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.editorial.application.EditorFailure;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import com.globalnewsflash.editorial.domain.EditorFailure;
 import com.globalnewsflash.editorial.domain.EditorRequest;
 import com.globalnewsflash.editorial.domain.EditorResponse;
 import java.net.http.HttpClient;
@@ -12,10 +16,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
-
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 class OpenAiEditorTest {
     private final JsonMapper json = new JsonMapper();

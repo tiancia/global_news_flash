@@ -1,8 +1,8 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.editorial.application.EditorFailure;
+import com.globalnewsflash.editorial.domain.EditorFailure;
 import com.globalnewsflash.editorial.domain.EditorResponse;
-import java.math.BigInteger;
+import com.globalnewsflash.editorial.domain.ModelCost;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -60,25 +60,12 @@ public abstract class AiModelProperties {
     }
 
     /** One token per UTF-8 byte is deliberately conservative; overhead also covers prompt/schema. */
-    public long estimatedRequestMicros() {
-        if (maxInputCharacters < 0 || maxOutputTokens < 0 || inputMicrosPerMillionTokens <= 0
-                || outputMicrosPerMillionTokens <= 0) throw new EditorFailure(code("PRICES_NOT_CONFIGURED"), false);
-        long maximumInputTokens = Math.addExact(Math.multiplyExact((long) maxInputCharacters, 4L), 65_536L);
-        return price(maximumInputTokens, maxOutputTokens);
-    }
+    public long estimatedRequestMicros() { return costs().estimatedRequestMicros(); }
 
-    public long actualMicros(EditorResponse.Usage usage) {
-        if (usage == null || usage.estimated()) throw new EditorFailure(code("USAGE_UNKNOWN"), true);
-        return price(usage.inputTokens(), usage.outputTokens());
-    }
+    public long actualMicros(EditorResponse.Usage usage) { return costs().actualMicros(usage); }
 
-    private long price(long inputTokens, long outputTokens) {
-        if (inputMicrosPerMillionTokens <= 0 || outputMicrosPerMillionTokens <= 0) {
-            throw new EditorFailure(code("PRICES_NOT_CONFIGURED"), false);
-        }
-        BigInteger numerator = BigInteger.valueOf(inputTokens).multiply(BigInteger.valueOf(inputMicrosPerMillionTokens))
-                .add(BigInteger.valueOf(outputTokens).multiply(BigInteger.valueOf(outputMicrosPerMillionTokens)));
-        return numerator.add(BigInteger.valueOf(999_999L)).divide(BigInteger.valueOf(1_000_000L)).longValueExact();
+    private ModelCost costs() {
+        return new ModelCost(codePrefix, maxInputCharacters, maxOutputTokens, inputMicrosPerMillionTokens, outputMicrosPerMillionTokens);
     }
 
     public String getApiKey() { return apiKey; }

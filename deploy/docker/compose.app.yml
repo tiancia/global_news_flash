@@ -1,0 +1,126 @@
+# Optional application container. Run from the project root with -f compose.yml -f deploy/docker/compose.app.yml.
+# Local development uses MySQL only.
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    image: global-news-flash:local
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${NEWS_PORT:-8090}:${NEWS_PORT:-8090}"
+    environment:
+      SPRING_PROFILES_ACTIVE: mysql
+      TZ: UTC
+      # Listen on the container network; the host mapping above exposes ops only on loopback.
+      NEWS_BIND_ADDRESS: 0.0.0.0
+      NEWS_PORT: ${NEWS_PORT:-8090}
+      NEWS_DB_URL: jdbc:mysql://db:3306/global_news_flash?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+      NEWS_DB_USER: global_news_flash
+      NEWS_DB_PASSWORD: ${NEWS_DB_PASSWORD:-123456}
+      # Unset host overrides are omitted; defaults are defined once in application.yml.
+      NEWS_RUNTIME_MODE:
+      NEWS_EXTERNAL_ENABLED:
+      NEWS_AI_PROVIDER:
+      NEWS_OPS_TOKEN: ${NEWS_OPS_TOKEN:?Set an independent NEWS_OPS_TOKEN of at least 32 characters}
+      OPENAI_API_KEY:
+      OPENAI_MODEL:
+      OPENAI_BASE_URL:
+      NEWS_OPENAI_TIMEOUT:
+      NEWS_OPENAI_MAX_INPUT_CHARACTERS:
+      NEWS_OPENAI_MAX_OUTPUT_TOKENS:
+      NEWS_OPENAI_INPUT_MICROS_PER_MILLION_TOKENS:
+      NEWS_OPENAI_OUTPUT_MICROS_PER_MILLION_TOKENS:
+      DEEPSEEK_API_KEY:
+      DEEPSEEK_MODEL:
+      DEEPSEEK_BASE_URL:
+      NEWS_DEEPSEEK_TIMEOUT:
+      NEWS_DEEPSEEK_MAX_INPUT_CHARACTERS:
+      NEWS_DEEPSEEK_MAX_OUTPUT_TOKENS:
+      NEWS_DEEPSEEK_INPUT_MICROS_PER_MILLION_TOKENS:
+      NEWS_DEEPSEEK_OUTPUT_MICROS_PER_MILLION_TOKENS:
+      NEWS_TELEGRAM_ENABLED:
+      NEWS_TELEGRAM_BOT_TOKEN:
+      NEWS_TELEGRAM_CHAT_ID:
+      NEWS_TELEGRAM_CONNECT_TIMEOUT:
+      NEWS_TELEGRAM_REQUEST_TIMEOUT:
+      NEWS_PUBLICATION_WORKER_ENABLED:
+      NEWS_PUBLICATION_WORKER_DELAY_MS:
+      NEWS_PUBLICATION_LEASE:
+      NEWS_PUBLICATION_MAX_ATTEMPTS:
+      NEWS_PUBLICATION_MAX_PER_HOUR:
+      NEWS_PUBLICATION_MAX_PER_DAY:
+      NEWS_PUBLICATION_MINIMUM_INTERVAL:
+      NEWS_AUTOMATION_ENABLED:
+      NEWS_AUTOMATION_DELAY_MS:
+      NEWS_AUTOMATION_INITIAL_DELAY_MS:
+      NEWS_POLICY_READY:
+      NEWS_POLICY_VERSION:
+      NEWS_MAX_AGE:
+      NEWS_MAX_CHARACTERS:
+      NEWS_MINIMUM_INDEPENDENT_CHAINS:
+      NEWS_ALLOWED_TOPICS:
+      NEWS_AUTOMATION_BATCH_SIZE:
+      NEWS_DAILY_BUDGET_MICROS:
+      NEWS_DAILY_REQUESTS:
+      NEWS_EDITOR_JOB_LEASE:
+      NEWS_CYCLE_LEASE:
+      NEWS_REVISION_MODE:
+      NEWS_INGESTION_ENABLED:
+      NEWS_INGESTION_POLL_DELAY_MS:
+      NEWS_SOURCE_POLL_INTERVAL_MS:
+      NEWS_MAX_SOURCES_PER_POLL:
+      NEWS_MAX_ITEMS_PER_SOURCE:
+      NEWS_MAX_BODY_CHARACTERS:
+      NEWS_MINIMUM_BODY_CHARACTERS:
+      NEWS_SOURCE_REQUEST_TIMEOUT_SECONDS:
+      NEWS_SOURCE_MAX_RESPONSE_BYTES:
+      NEWS_SOURCE_LEASE_SECONDS:
+      NEWS_INBOX_LEASE_SECONDS:
+      NEWS_MAX_PENDING_ITEMS:
+      NEWS_RSS_FEEDS_JSON:
+      NEWS_USGS_ENABLED:
+      NEWS_USGS_APPROVED:
+      NEWS_USGS_LICENSE_VERSION:
+      NEWS_USGS_PERMITTED_PRODUCERS:
+      NEWS_USGS_URL:
+      NEWS_FED_ENABLED:
+      NEWS_FED_APPROVED:
+      NEWS_FED_LICENSE_VERSION:
+      NEWS_FED_PERMITTED_PRODUCERS:
+      NEWS_FED_URL:
+      NEWS_FED_ARTICLE_SELECTOR:
+      NEWS_GDELT_ENABLED:
+      NEWS_GDELT_APPROVED:
+      NEWS_GDELT_LICENSE_VERSION:
+      NEWS_GDELT_PERMITTED_PRODUCERS:
+      NEWS_GDELT_URL:
+      NEWS_DIGEST_ENABLED:
+      NEWS_DIGEST_UTC_HOUR:
+      NEWS_DIGEST_MAX_ITEMS:
+      NEWS_DIGEST_MAX_CHARACTERS:
+      NEWS_ALERT_ENABLED:
+      NEWS_ALERT_WEBHOOK_URL:
+      NEWS_ALERT_WEBHOOK_TOKEN:
+      NEWS_ALERT_TIMEOUT:
+      NEWS_ALERT_DELAY_MS:
+    logging: *bounded-logging
+    stop_grace_period: 45s

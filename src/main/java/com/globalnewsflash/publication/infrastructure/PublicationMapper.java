@@ -1,9 +1,11 @@
 package com.globalnewsflash.publication.infrastructure;
 
+import com.globalnewsflash.publication.domain.ChannelLimit;
 import com.globalnewsflash.publication.domain.DeliveryAttempt;
-import com.globalnewsflash.publication.domain.PublicationOperation;
 import com.globalnewsflash.publication.domain.PublicationAlert;
+import com.globalnewsflash.publication.domain.PublicationOperation;
 import com.globalnewsflash.publication.domain.PublicationResolution;
+import com.globalnewsflash.publication.port.out.PublicationRepository;
 import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
@@ -13,9 +15,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
-public interface PublicationMapper {
-    record ChannelLimit(String target, long hourStart, int hourCount, long dayStart,
-            int dayCount, Instant nextAllowedAt) {}
+public interface PublicationMapper extends PublicationRepository {
     String COLUMNS = "id,event_key,event_version,target,kind,state,body,original_operation_id,"
             + "message_id,attempts,lease_token,lease_until,next_attempt_at,last_error,synthetic";
 

@@ -1,4 +1,5 @@
-# Local infrastructure: docker compose up -d starts only this project's MySQL.
+# Run from the project root: docker compose up -d
+# Local infrastructure: starts only this project's MySQL.
 name: global-news-flash
 
 services:

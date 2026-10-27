@@ -1,11 +1,12 @@
 package com.globalnewsflash.integrations.telegram;
 
-import com.globalnewsflash.publication.infrastructure.PublicationMapper;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
 import com.globalnewsflash.integrations.http.BoundedBodySubscriber;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.publication.application.DeliveryGateway;
-import com.globalnewsflash.publication.application.DeliveryResult;
+import com.globalnewsflash.publication.domain.DeliveryResult;
 import com.globalnewsflash.publication.domain.PublicationOperation;
+import com.globalnewsflash.publication.domain.PublicationText;
+import com.globalnewsflash.publication.port.out.PublicationRepository;
+import com.globalnewsflash.publication.port.out.DeliveryGateway;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -28,16 +29,16 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 @ConditionalOnProperty(name = "news.runtime.mode", havingValue = "LIVE")
 public final class TelegramDeliveryGateway implements DeliveryGateway {
-    private final RuntimeProperties runtime;
+    private final RuntimeSettings runtime;
     private final TelegramProperties properties;
-    private final PublicationMapper publications;
+    private final PublicationRepository publications;
     private final JsonMapper json;
     private final Clock clock;
     private final HttpClient client;
     private Permission cachedPermission;
 
-    public TelegramDeliveryGateway(RuntimeProperties runtime, TelegramProperties properties,
-            PublicationMapper publications, JsonMapper json, Clock clock) {
+    public TelegramDeliveryGateway(RuntimeSettings runtime, TelegramProperties properties,
+            PublicationRepository publications, JsonMapper json, Clock clock) {
         this.runtime = runtime;
         this.properties = properties;
         this.publications = publications;
@@ -55,8 +56,8 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
         if (operation.synthetic()) return DeliveryResult.failed("TELEGRAM_SYNTHETIC_CONTENT_REJECTED");
         if (!properties.isConfigured()) return DeliveryResult.failed("TELEGRAM_CONFIGURATION_REQUIRED");
         if (!properties.getChatId().equals(operation.target())) return DeliveryResult.failed("TELEGRAM_TARGET_NOT_ALLOWED");
-        String text = TelegramMessageText.render(operation);
-        if (!TelegramMessageText.withinLimit(text)) {
+        String text = PublicationText.render(operation);
+        if (!PublicationText.withinLimit(text)) {
             return DeliveryResult.failed("TELEGRAM_TEXT_LIMIT_EXCEEDED");
         }
         boolean edit = "EDIT".equals(operation.kind());

@@ -1,11 +1,11 @@
 package com.globalnewsflash.integrations.sources;
 
-import com.globalnewsflash.ingestion.application.SourceAdapter;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourceMaterial.Fact;
-import java.time.Instant;
+import com.globalnewsflash.ingestion.port.out.SourceAdapter;
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;

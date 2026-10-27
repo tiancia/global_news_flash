@@ -1,13 +1,14 @@
 package com.globalnewsflash.integrations.ai;
 
-import com.globalnewsflash.editorial.application.EditorPort;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.globalnewsflash.editorial.infrastructure.SyntheticEditor;
+import com.globalnewsflash.editorial.port.out.EditorPort;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 import tools.jackson.databind.json.JsonMapper;
-import static org.assertj.core.api.Assertions.assertThat;
 
 class AiEditorSelectionTest {
     @Test void offlineSelectsOnlySynthetic() { check(Map.of(), SyntheticEditor.class); }

@@ -1,11 +1,12 @@
 package com.globalnewsflash.automation.infrastructure;
 
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** External clients require both LIVE mode and an explicit external-access switch. */
 @ConfigurationProperties("news.runtime")
-public class RuntimeProperties {
+public class RuntimeProperties implements RuntimeSettings {
     private String mode = "OFFLINE";
     private boolean externalEnabled;
     private String preferredProvider = "openai";

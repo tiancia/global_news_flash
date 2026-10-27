@@ -1,13 +1,27 @@
 package com.globalnewsflash.publication;
 
-import com.globalnewsflash.publication.application.DeliveryGateway;
-import com.globalnewsflash.publication.application.DeliveryResult;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import com.globalnewsflash.publication.application.PublicationService;
-import com.globalnewsflash.publication.application.PublicationGuard;
+import com.globalnewsflash.publication.domain.DeliveryResult;
 import com.globalnewsflash.publication.domain.PublicationOperation;
 import com.globalnewsflash.publication.infrastructure.PublicationMapper;
 import com.globalnewsflash.publication.infrastructure.PublicationProperties;
 import com.globalnewsflash.publication.infrastructure.PublicationWorkerConfiguration;
+import com.globalnewsflash.publication.port.out.DeliveryGateway;
+import com.globalnewsflash.publication.port.out.PublicationGuard;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,20 +39,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:publication-tests;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",

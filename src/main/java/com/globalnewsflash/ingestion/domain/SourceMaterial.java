@@ -41,4 +41,13 @@ public record SourceMaterial(
             requireText(text, "fact text");
         }
     }
+    /** Rediscovery is not a material revision. The caller chooses the historical snapshot format. */
+    public List<Object> versionIdentity(boolean includeSynthetic, boolean sortFacts) {
+        var identity = new java.util.ArrayList<Object>(java.util.Arrays.asList(sourceId, externalId, eventKey, canonicalUrl,
+                headline, topic, producer, evidenceChainId, occurredAt, publishedAt, sourceUpdatedAt,
+                sortFacts ? facts.stream().sorted(java.util.Comparator.comparing(Fact::id)).toList() : facts, discoveryOnly));
+        if (includeSynthetic) identity.add(synthetic);
+        return identity;
+    }
+
 }

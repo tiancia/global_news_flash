@@ -1,5 +1,8 @@
 package com.globalnewsflash.growth;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.globalnewsflash.growth.application.GrowthService;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -11,9 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:growth-tests;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE")
 @ActiveProfiles("test")
@@ -99,8 +99,8 @@ class GrowthServiceTest {
     void materialGenerationCopiesOnlySuppliedBodiesAndDoesNotInventNews() {
         var materials = service.createMaterials(List.of("Verified supplied fact A.", "Verified supplied fact B."));
         assertThat(materials.synthetic()).isTrue();
-        assertThat(materials.intro()).startsWith(GrowthService.SYNTHETIC_PREFIX);
-        assertThat(materials.pinned()).startsWith(GrowthService.SYNTHETIC_PREFIX);
+        assertThat(materials.intro()).startsWith(com.globalnewsflash.growth.domain.GrowthPolicy.SYNTHETIC_PREFIX);
+        assertThat(materials.pinned()).startsWith(com.globalnewsflash.growth.domain.GrowthPolicy.SYNTHETIC_PREFIX);
         assertThat(materials.dailyDigest()).endsWith("Verified supplied fact A.\n\nVerified supplied fact B.");
         assertThat(materials.promotion()).endsWith("Verified supplied fact A.\n\nVerified supplied fact B.");
         assertThat(service.createMaterials(List.of()).dailyDigest()).contains("No verified items supplied.");
@@ -146,5 +146,5 @@ class GrowthServiceTest {
         assertThat(service.report().knownJoins()).isEqualTo(1);
     }
 
-    private static String text(String body) { return GrowthService.SYNTHETIC_PREFIX + "\n" + body; }
+    private static String text(String body) { return com.globalnewsflash.growth.domain.GrowthPolicy.SYNTHETIC_PREFIX + "\n" + body; }
 }

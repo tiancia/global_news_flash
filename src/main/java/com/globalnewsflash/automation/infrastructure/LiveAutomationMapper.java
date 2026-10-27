@@ -1,14 +1,14 @@
 package com.globalnewsflash.automation.infrastructure;
 
+import com.globalnewsflash.automation.domain.Alert;
+import com.globalnewsflash.automation.domain.EditorJob;
+import com.globalnewsflash.automation.domain.Run;
+import com.globalnewsflash.automation.port.out.LiveAutomationRepository;
 import java.util.List;
 import org.apache.ibatis.annotations.*;
 
 @Mapper
-public interface LiveAutomationMapper {
-    record EditorJob(String id, String eventKey, int eventVersion, String fingerprint, String state,
-                     String reservationId, long leaseUntil, long createdAt, long updatedAt, String lastError) {}
-    record Run(String id, long startedAt, Long finishedAt, String state, int processed, String lastError) {}
-    record Alert(String id, String category, String subjectId, String reasonCode, long createdAt) {}
+public interface LiveAutomationMapper extends LiveAutomationRepository {
 
     @Select("SELECT * FROM live_editor_job WHERE event_key=#{key} AND fingerprint=#{fingerprint} FOR UPDATE")
     EditorJob lockJob(@Param("key") String key, @Param("fingerprint") String fingerprint);

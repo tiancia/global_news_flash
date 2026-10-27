@@ -2,40 +2,45 @@ package com.globalnewsflash.automation.application;
 
 import static com.globalnewsflash.shared.Hashing.sha256;
 
-import com.globalnewsflash.automation.infrastructure.PipelineMapper;
-import com.globalnewsflash.automation.infrastructure.PipelineMapper.EventVersion;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.editorial.application.EditorialService;
+import com.globalnewsflash.automation.domain.EventVersion;
+import com.globalnewsflash.automation.domain.PipelinePolicy;
+import com.globalnewsflash.automation.port.in.BudgetUseCase;
+import com.globalnewsflash.automation.port.in.PipelineUseCase;
+import com.globalnewsflash.automation.port.out.PipelineRepository;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.editorial.domain.EditorialResult;
+import com.globalnewsflash.editorial.port.in.EditorialUseCase;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
-import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.ingestion.domain.SourceRegistration;
+import com.globalnewsflash.ingestion.port.out.SourceRegistry;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
+import com.globalnewsflash.shared.port.out.SnapshotCodec;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
-import tools.jackson.databind.json.JsonMapper;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class PipelineService {
-    private final PipelineMapper mapper;
-    private final EditorialService editorial;
-    private final PublicationService publication;
-    private final JsonMapper json;
+public class PipelineService implements PipelineUseCase {
+    private final SourceRegistry sourceRegistry;
+    private final PipelineRepository mapper;
+    private final EditorialUseCase editorial;
+    private final PublicationUseCase publication;
+    private final SnapshotCodec json;
     private final Clock clock;
-    private final BudgetService budgets;
-    private final RuntimeProperties runtime;
+    private final BudgetUseCase budgets;
+    private final RuntimeSettings runtime;
 
-    public PipelineService(PipelineMapper mapper, EditorialService editorial, PublicationService publication,
-                           JsonMapper json, Clock clock, BudgetService budgets, RuntimeProperties runtime) {
+    public PipelineService(PipelineRepository mapper, EditorialUseCase editorial, PublicationUseCase publication,
+                           SnapshotCodec json, Clock clock, BudgetUseCase budgets, RuntimeSettings runtime, SourceRegistry sourceRegistry) {
+        this.sourceRegistry = sourceRegistry;
         this.mapper = mapper;
         this.editorial = editorial;
         this.publication = publication;
@@ -45,29 +50,13 @@ public class PipelineService {
         this.runtime = runtime;
     }
 
-    public record PipelineRun(String eventKey, int eventVersion, String state, List<String> reasons,
-                              String publicationId, boolean duplicate, boolean synthetic) {}
-    public record BudgetAllocation(String periodId, long estimatedMicros) {}
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PipelineRun process(List<SourceMaterial> input, EditorialPolicy policy, BudgetAllocation budget) {
-        if (input == null || input.isEmpty()) throw new IllegalArgumentException("At least one material is required");
-        if (policy == null) throw new IllegalArgumentException("An explicit policy is required");
-        if (input.stream().anyMatch(m -> !m.synthetic())) {
-            throw new IllegalArgumentException("This build accepts synthetic materials only");
-        }
-        String eventKey = input.getFirst().eventKey();
-        if (input.stream().anyMatch(m -> !eventKey.equals(m.eventKey()))) {
-            throw new IllegalArgumentException("One event per processing request is required");
-        }
+        String eventKey = PipelinePolicy.requireSyntheticRequest(input, policy);
         List<SourcePolicy> policies = sourcePolicies(true);
         // Recheck admission before storing any supplied material content.
-        List<String> admission = new ArrayList<>();
-        for (var material : input) {
-            var source = policies.stream().filter(p -> p.sourceId().equals(material.sourceId())).findFirst();
-            if (source.isEmpty()) admission.add("SOURCE_NOT_REGISTERED");
-            else admission.addAll(source.get().check(material));
-        }
+        List<String> admission = PipelinePolicy.admission(input, policies, false);
         if (!admission.isEmpty()) {
             audit("ADMISSION_REJECTED", eventKey, String.join(",", admission));
             return new PipelineRun(eventKey, 0, "HELD", List.copyOf(admission), null, false, true);
@@ -121,8 +110,7 @@ public class PipelineService {
                     eventKey, policy.version(), clock.instant());
         }
         int version = latest + 1;
-        String state = decision.eligible() ? "ELIGIBLE" :
-                decision.reasons().stream().anyMatch(r -> r.contains("EXPIRED") || r.contains("STALE")) ? "EXPIRED" : "HELD";
+        String state = PipelinePolicy.editorialState(decision.eligible(), decision.reasons());
         String publicationId = decision.eligible()
                 ? publication.enqueue(eventKey, version, "synthetic-channel", "SEND", decision.draft().body(), null, true).id()
                 : null;
@@ -135,7 +123,7 @@ public class PipelineService {
         return new PipelineRun(eventKey, version, state, decision.reasons(), publicationId, false, true);
     }
 
-    public List<PipelineMapper.SourceRow> sources() { return mapper.sources(); }
+    public List<SourceRegistration> sources() { return sourceRegistry.sources(); }
     public List<EventVersion> versions() { return mapper.versions(); }
     public long materialCount() { return mapper.materialCount(); }
     public long auditCount() { return mapper.auditCount(); }
@@ -144,27 +132,17 @@ public class PipelineService {
     public void setSourceEnabled(String id, boolean enabled) {
         var source = sources().stream().filter(s -> s.id().equals(id)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown source"));
-        if (enabled && !source.synthetic() && (!runtime.live() || !source.approved()
-                || source.licenseVersion().isBlank() || "pending".equals(source.licenseVersion())
-                || source.permittedProducers().isBlank()))
-            throw new IllegalArgumentException("Real sources require live mode, approval, license and permitted producers");
-        mapper.enableSource(id, enabled);
+        source.requireEnablement(enabled, runtime.live());
+        sourceRegistry.enableSource(id, enabled);
         audit(enabled ? "SOURCE_ENABLED" : "SOURCE_DISABLED", id, "operator action");
     }
 
     public List<SourcePolicy> sourcePolicies(boolean synthetic) {
-        return sources().stream().filter(s -> s.synthetic() == synthetic).map(s -> new SourcePolicy(s.sourceId(),
-                s.enabled(), s.approved(), s.synthetic(), s.licenseVersion(),
-                s.permittedProducers().isBlank() ? Set.of() : Set.copyOf(Arrays.asList(s.permittedProducers().split(",")))))
-                .toList();
+        return sources().stream().filter(s -> s.synthetic() == synthetic).map(SourceRegistration::policy).toList();
     }
 
-    private String materialIdentity(SourceMaterial m) {
-        // discoveredAt is deliberately excluded: rediscovery is not a material revision.
-        return json.writeValueAsString(Arrays.asList(m.sourceId(), m.externalId(), m.eventKey(), m.canonicalUrl(),
-                m.headline(), m.topic(), m.producer(), m.evidenceChainId(), m.occurredAt(), m.publishedAt(),
-                m.sourceUpdatedAt(), m.facts().stream().sorted(Comparator.comparing(SourceMaterial.Fact::id)).toList(),
-                m.discoveryOnly(), m.synthetic()));
+    private String materialIdentity(SourceMaterial material) {
+        return json.writeValueAsString(material.versionIdentity(true, true));
     }
 
     private void audit(String action, String subject, String details) {

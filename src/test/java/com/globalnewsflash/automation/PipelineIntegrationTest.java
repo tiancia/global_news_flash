@@ -1,8 +1,11 @@
 package com.globalnewsflash.automation;
 
-import com.globalnewsflash.automation.application.PipelineService;
+import static org.assertj.core.api.Assertions.*;
+
 import com.globalnewsflash.automation.application.BudgetService;
+import com.globalnewsflash.automation.application.PipelineService;
 import com.globalnewsflash.automation.infrastructure.PipelineMapper;
+import com.globalnewsflash.automation.port.in.PipelineUseCase;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.integrations.sources.UsgsAdapter;
@@ -24,7 +27,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:pipeline-tests;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1")
 @ActiveProfiles("test")
@@ -115,7 +117,7 @@ class PipelineIntegrationTest {
         var material = material();
         try (var pool = Executors.newFixedThreadPool(2)) {
             var gate = new CountDownLatch(1);
-            Callable<PipelineService.PipelineRun> task = () -> { gate.await(); return process(List.of(material), policy()); };
+            Callable<PipelineUseCase.PipelineRun> task = () -> { gate.await(); return process(List.of(material), policy()); };
             var a = pool.submit(task); var b = pool.submit(task); gate.countDown();
             var resultA = a.get(10, TimeUnit.SECONDS); var resultB = b.get(10, TimeUnit.SECONDS);
             assertThat(resultA.publicationId()).isEqualTo(resultB.publicationId());
@@ -150,9 +152,9 @@ class PipelineIntegrationTest {
     @Test void exhaustedRequestBudgetBlocksEditingAndQueueCreation() throws Exception {
         String period = UUID.randomUUID().toString();
         budgets.configureSyntheticPeriod(period, 100, 1);
-        var first = pipeline.process(List.of(material()), policy(), new PipelineService.BudgetAllocation(period, 100));
+        var first = pipeline.process(List.of(material()), policy(), new PipelineUseCase.BudgetAllocation(period, 100));
         assertThat(first.state()).isEqualTo("ELIGIBLE");
-        var second = pipeline.process(List.of(material()), policy(), new PipelineService.BudgetAllocation(period, 100));
+        var second = pipeline.process(List.of(material()), policy(), new PipelineUseCase.BudgetAllocation(period, 100));
         assertThat(second.reasons()).contains("BUDGET_EXHAUSTED");
         assertThat(second.publicationId()).isNull();
     }
@@ -163,8 +165,8 @@ class PipelineIntegrationTest {
         assertThat(result.publicationId()).isNull();
     }
 
-    private PipelineService.PipelineRun process(List<SourceMaterial> materials, EditorialPolicy policy) {
-        return pipeline.process(materials, policy, new PipelineService.BudgetAllocation("integration-period", 100));
+    private PipelineUseCase.PipelineRun process(List<SourceMaterial> materials, EditorialPolicy policy) {
+        return pipeline.process(materials, policy, new PipelineUseCase.BudgetAllocation("integration-period", 100));
     }
     private SourceMaterial material() throws Exception {
         var original = usgs.parse(fixture("usgs.json"), NOW, true).getFirst();

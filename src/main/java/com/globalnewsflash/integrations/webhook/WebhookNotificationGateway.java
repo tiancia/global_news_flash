@@ -1,6 +1,6 @@
 package com.globalnewsflash.integrations.webhook;
 
-import com.globalnewsflash.automation.application.NotificationGateway;
+import com.globalnewsflash.automation.port.out.NotificationGateway;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

@@ -1,10 +1,16 @@
 package com.globalnewsflash.automation;
 
-import com.globalnewsflash.automation.application.NotificationGateway;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
 import com.globalnewsflash.automation.application.OpsNotificationService;
+import com.globalnewsflash.automation.domain.Alert;
+import com.globalnewsflash.automation.domain.Notice;
 import com.globalnewsflash.automation.infrastructure.LiveAutomationMapper;
 import com.globalnewsflash.automation.infrastructure.NotificationMapper;
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
+import com.globalnewsflash.automation.port.out.NotificationGateway;
 import com.globalnewsflash.integrations.webhook.AlertProperties;
 import com.globalnewsflash.publication.application.PublicationService;
 import com.globalnewsflash.publication.domain.PublicationAlert;
@@ -16,9 +22,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 class OpsNotificationServiceTest {
     private static final Instant NOW = Instant.parse("2026-10-27T00:00:00Z");
@@ -95,19 +98,19 @@ class OpsNotificationServiceTest {
 
     @Test void gathersBothAlertSourcesAndSkipsAcknowledgedPublications() {
         when(automation.unnotifiedAlerts()).thenReturn(List.of(
-                new LiveAutomationMapper.Alert("editor-alert", "EDITOR", "job", "EDITOR_FAILED", NOW.toEpochMilli())));
+                new Alert("editor-alert", "EDITOR", "job", "EDITOR_FAILED", NOW.toEpochMilli())));
         when(publications.unnotifiedAlerts()).thenReturn(List.of(
                 new PublicationAlert("send-alert", "operation", "DELIVERY", "UNKNOWN", NOW, null),
                 new PublicationAlert("acknowledged", "old-operation", "DELIVERY", "UNKNOWN", NOW, NOW)));
         assertThat(service.flush()).isZero();
-        verify(notices).insert(new NotificationMapper.Notice("editor-alert", "EDITOR", "job", "EDITOR_FAILED", "PENDING", 0, 0, null));
-        verify(notices).insert(new NotificationMapper.Notice("send-alert", "DELIVERY", "operation", "UNKNOWN", "PENDING", 0, 0, null));
+        verify(notices).insert(new Notice("editor-alert", "EDITOR", "job", "EDITOR_FAILED", "PENDING", 0, 0, null));
+        verify(notices).insert(new Notice("send-alert", "DELIVERY", "operation", "UNKNOWN", "PENDING", 0, 0, null));
         verify(notices, times(2)).insert(any());
         verifyNoInteractions(gateway);
     }
 
     private void due(int attempts, boolean claimed) {
-        when(notices.due(NOW.toEpochMilli())).thenReturn(List.of(new NotificationMapper.Notice(
+        when(notices.due(NOW.toEpochMilli())).thenReturn(List.of(new Notice(
                 "notice-1", "EDITOR", "job-1", "PROVIDER_UNAVAILABLE", "PENDING", attempts, 0, null)));
         if (claimed) when(notices.claim(eq("notice-1"), anyLong(), eq(NOW.toEpochMilli()))).thenReturn(1);
     }

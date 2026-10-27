@@ -1,11 +1,12 @@
 package com.globalnewsflash.integrations.webhook;
 
+import com.globalnewsflash.automation.port.out.NotificationSettings;
 import java.net.URI;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("news.alert")
-public class AlertProperties {
+public class AlertProperties implements NotificationSettings {
     private boolean enabled;
     private String webhookUrl = "";
     private String webhookToken = "";

@@ -1,8 +1,8 @@
 package com.globalnewsflash.integrations.sources;
 
-import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
-import com.globalnewsflash.integrations.http.BoundedBodySubscriber;
 import com.globalnewsflash.ingestion.domain.CanonicalUrl;
+import com.globalnewsflash.ingestion.port.out.IngestionSettings;
+import com.globalnewsflash.integrations.http.BoundedBodySubscriber;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -11,10 +11,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -36,10 +34,10 @@ final class BoundedHttpsFetcher {
         String code() { return code; }
     }
 
-    private final LiveIngestionProperties properties;
+    private final IngestionSettings properties;
     private final HttpClient client;
 
-    BoundedHttpsFetcher(LiveIngestionProperties properties) {
+    BoundedHttpsFetcher(IngestionSettings properties) {
         this.properties = properties;
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds()))
                 .followRedirects(HttpClient.Redirect.NEVER).build();

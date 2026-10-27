@@ -1,7 +1,10 @@
 package com.globalnewsflash.growth.infrastructure;
 
 import com.globalnewsflash.growth.domain.Distribution;
+import com.globalnewsflash.growth.domain.Invite;
 import com.globalnewsflash.growth.domain.JoinResult;
+import com.globalnewsflash.growth.domain.Target;
+import com.globalnewsflash.growth.port.out.GrowthRepository;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -9,9 +12,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
-public interface GrowthMapper {
-    record Target(String targetId, String label, boolean synthetic, boolean authorized, long createdAt, long updatedAt) {}
-    record Invite(String inviteKey, String targetId, boolean synthetic, long createdAt) {}
+public interface GrowthMapper extends GrowthRepository {
 
     @Select("SELECT target_id,label,synthetic,authorized,created_at,updated_at FROM growth_target WHERE target_id=#{targetId} FOR UPDATE")
     Target lockTarget(String targetId);

@@ -1,10 +1,14 @@
 package com.globalnewsflash.automation.application;
 
-import com.globalnewsflash.integrations.webhook.AlertProperties;
-import com.globalnewsflash.automation.infrastructure.LiveAutomationMapper;
-import com.globalnewsflash.automation.infrastructure.NotificationMapper;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.automation.domain.Notice;
+import com.globalnewsflash.automation.domain.NotificationPolicy;
+import com.globalnewsflash.automation.port.in.NotificationUseCase;
+import com.globalnewsflash.automation.port.out.LiveAutomationRepository;
+import com.globalnewsflash.automation.port.out.NotificationGateway;
+import com.globalnewsflash.automation.port.out.NotificationRepository;
+import com.globalnewsflash.automation.port.out.NotificationSettings;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import java.time.Clock;
 import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
@@ -12,17 +16,17 @@ import org.springframework.stereotype.Service;
 
 /** Optional, at-least-once webhook alerts containing stable codes and identifiers only. */
 @Service
-public class OpsNotificationService {
-    private final RuntimeProperties runtime;
-    private final AlertProperties properties;
-    private final LiveAutomationMapper automation;
-    private final PublicationService publications;
-    private final NotificationMapper notices;
+public class OpsNotificationService implements NotificationUseCase {
+    private final RuntimeSettings runtime;
+    private final NotificationSettings properties;
+    private final LiveAutomationRepository automation;
+    private final PublicationUseCase publications;
+    private final NotificationRepository notices;
     private final NotificationGateway gateway;
     private final Clock clock;
 
-    public OpsNotificationService(RuntimeProperties runtime, AlertProperties properties, LiveAutomationMapper automation,
-            PublicationService publications, NotificationMapper notices, NotificationGateway gateway, Clock clock) {
+    public OpsNotificationService(RuntimeSettings runtime, NotificationSettings properties, LiveAutomationRepository automation,
+            PublicationUseCase publications, NotificationRepository notices, NotificationGateway gateway, Clock clock) {
         this.runtime = runtime; this.properties = properties; this.automation = automation;
         this.publications = publications; this.notices = notices; this.gateway = gateway; this.clock = clock;
     }
@@ -35,7 +39,7 @@ public class OpsNotificationService {
         }
         int delivered = 0;
         for (var notice : notices.due(clock.millis())) {
-            if (notice.attempts() >= 5) {
+            if (NotificationPolicy.exhausted(notice.attempts())) {
                 notices.finish(notice.id(), notice.attempts(), "FAILED", clock.millis(), "ALERT_ATTEMPTS_EXHAUSTED");
                 continue;
             }
@@ -43,8 +47,8 @@ public class OpsNotificationService {
             boolean success = gateway.deliver(new NotificationGateway.Notification(notice.id(), notice.category(),
                     notice.subjectId(), notice.reasonCode()));
             int attempts = notice.attempts() + 1;
-            notices.finish(notice.id(), attempts, success ? "SENT" : attempts >= 5 ? "FAILED" : "PENDING",
-                    clock.millis() + Math.min(3_600_000L, 30_000L << Math.min(attempts, 6)),
+            notices.finish(notice.id(), attempts, NotificationPolicy.state(success, attempts),
+                    NotificationPolicy.retryAt(clock.millis(), attempts),
                     success ? null : "ALERT_WEBHOOK_UNAVAILABLE");
             if (success) delivered++;
         }
@@ -52,7 +56,7 @@ public class OpsNotificationService {
     }
     public Object status() { return Map.of("enabled", properties.isEnabled(), "configured", properties.configured(), "notifications", notices.list()); }
     private void add(String id, String category, String subject, String reason) {
-        try { notices.insert(new NotificationMapper.Notice(id, category, subject, reason, "PENDING", 0, 0, null)); }
+        try { notices.insert(new Notice(id, category, subject, reason, "PENDING", 0, 0, null)); }
         catch (DuplicateKeyException exists) { /* a persisted alert is notified at most once after success */ }
     }
 }

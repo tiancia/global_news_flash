@@ -1,6 +1,9 @@
 package com.globalnewsflash.ingestion.infrastructure;
 
-import com.globalnewsflash.automation.infrastructure.PipelineMapper.SourceRow;
+import com.globalnewsflash.ingestion.domain.InboxRow;
+import com.globalnewsflash.ingestion.domain.SourceRegistration;
+import com.globalnewsflash.ingestion.domain.SourceState;
+import com.globalnewsflash.ingestion.port.out.LiveIngestionRepository;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -9,14 +12,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
-public interface LiveIngestionMapper {
-    record SourceState(String sourceId, boolean registered, String cursorValue, String etag, String lastModified,
-            Long lastAttemptAt, Long lastSuccessAt, long nextPollAt, int consecutiveFailures, int lastItemCount,
-            String errorCode, String leaseOwner, long leaseUntil, String snapshotPayload, String snapshotEtag,
-            String snapshotModified, int snapshotOffset, Long snapshotCreatedAt) {}
-    record InboxRow(String id, String sourceId, String eventKey, String fingerprint, String materialPayload,
-            String state, String detail, int attempts, long nextAttemptAt, String leaseOwner, long leaseUntil,
-            long createdAt, Long completedAt) {}
+public interface LiveIngestionMapper extends LiveIngestionRepository {
 
     @Insert("""
             INSERT INTO ingestion_source_state(source_id,registered,next_poll_at,consecutive_failures,last_item_count,lease_until,snapshot_offset)
@@ -31,23 +27,23 @@ public interface LiveIngestionMapper {
     List<SourceState> sourceStates();
 
     @Select("SELECT * FROM news_source WHERE source_id=#{sourceId} AND synthetic=FALSE FOR UPDATE")
-    SourceRow lockSource(String sourceId);
+    SourceRegistration lockSource(String sourceId);
 
     @Select("SELECT * FROM news_source WHERE source_id=#{sourceId} AND synthetic=FALSE")
-    SourceRow source(String sourceId);
+    SourceRegistration source(String sourceId);
 
     @Insert("""
             INSERT INTO news_source(id,source_id,enabled,approved,synthetic,license_version,permitted_producers,scope_description)
             VALUES(#{id},#{sourceId},#{enabled},#{approved},FALSE,#{licenseVersion},#{permittedProducers},#{scopeDescription})
             """)
-    void insertSource(SourceRow source);
+    void insertSource(SourceRegistration source);
 
     @Update("""
             UPDATE news_source SET enabled=#{enabled},approved=#{approved},license_version=#{licenseVersion},
                 permitted_producers=#{permittedProducers},scope_description=#{scopeDescription}
             WHERE source_id=#{sourceId} AND synthetic=FALSE
             """)
-    void updateSource(SourceRow source);
+    void updateSource(SourceRegistration source);
 
     @Update("UPDATE ingestion_source_state SET registered=TRUE WHERE source_id=#{sourceId}")
     void registered(String sourceId);

@@ -1,17 +1,18 @@
 package com.globalnewsflash.automation.interfaces;
 
-import com.globalnewsflash.automation.application.DemoService;
-import com.globalnewsflash.automation.application.PipelineService;
-import com.globalnewsflash.automation.application.LiveAutomationService;
-import com.globalnewsflash.automation.application.LivePipelineService;
-import com.globalnewsflash.automation.application.OpsNotificationService;
-import com.globalnewsflash.automation.infrastructure.OperatingProperties;
-import com.globalnewsflash.digest.application.DigestService;
-import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
-import com.globalnewsflash.publication.application.PublicationService;
+import com.globalnewsflash.automation.domain.DemoScenario;
+import com.globalnewsflash.automation.port.in.AutomationUseCase;
+import com.globalnewsflash.automation.port.in.DemoUseCase;
+import com.globalnewsflash.automation.port.in.LivePipelineUseCase;
+import com.globalnewsflash.automation.port.in.NotificationUseCase;
+import com.globalnewsflash.automation.port.in.PipelineUseCase;
+import com.globalnewsflash.automation.port.out.OperatingSettings;
+import com.globalnewsflash.automation.port.out.RuntimeSettings;
+import com.globalnewsflash.digest.port.in.DigestUseCase;
+import com.globalnewsflash.publication.port.in.PublicationUseCase;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
@@ -19,20 +20,20 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/ops")
 public class OpsController {
-    private final PipelineService pipeline;
-    private final PublicationService publication;
-    private final DemoService demo;
-    private final RuntimeProperties runtime;
-    private final LiveAutomationService automation;
-    private final LivePipelineService livePipeline;
-    private final OperatingProperties operating;
-    private final OpsNotificationService notifications;
-    private final DigestService digest;
+    private final PipelineUseCase pipeline;
+    private final PublicationUseCase publication;
+    private final DemoUseCase demo;
+    private final RuntimeSettings runtime;
+    private final AutomationUseCase automation;
+    private final LivePipelineUseCase livePipeline;
+    private final OperatingSettings operating;
+    private final NotificationUseCase notifications;
+    private final DigestUseCase digest;
 
-    public OpsController(PipelineService pipeline, PublicationService publication, DemoService demo,
-                         RuntimeProperties runtime,
-                         LiveAutomationService automation, LivePipelineService livePipeline, OperatingProperties operating,
-                         OpsNotificationService notifications, DigestService digest) {
+    public OpsController(PipelineUseCase pipeline, PublicationUseCase publication, DemoUseCase demo,
+                         RuntimeSettings runtime,
+                         AutomationUseCase automation, LivePipelineUseCase livePipeline, OperatingSettings operating,
+                         NotificationUseCase notifications, DigestUseCase digest) {
         this.pipeline = pipeline;
         this.publication = publication;
         this.demo = demo;
@@ -45,7 +46,7 @@ public class OpsController {
     }
     public record PauseRequest(@NotNull Boolean paused) {}
     public record SourceRequest(@NotNull Boolean enabled) {}
-    public record DemoRequest(@NotNull DemoService.Scenario scenario) {}
+    public record DemoRequest(@NotNull DemoScenario scenario) {}
     public record CostResolutionRequest(@NotNull @jakarta.validation.constraints.PositiveOrZero Long actualMicros,
                                         @NotBlank @Size(max = 1000) String note) {}
 

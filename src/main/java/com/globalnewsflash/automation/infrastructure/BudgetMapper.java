@@ -1,12 +1,13 @@
 package com.globalnewsflash.automation.infrastructure;
 
+import com.globalnewsflash.automation.domain.BudgetPeriod;
+import com.globalnewsflash.automation.domain.Reservation;
+import com.globalnewsflash.automation.port.out.BudgetRepository;
 import java.util.List;
 import org.apache.ibatis.annotations.*;
 
 @Mapper
-public interface BudgetMapper {
-    record BudgetPeriod(String id, long maxMicros, int maxRequests, long reservedMicros, long spentMicros, int usedRequests) {}
-    record Reservation(String id, String periodId, long amountMicros, Long actualMicros, String state, long createdAt) {}
+public interface BudgetMapper extends BudgetRepository {
 
     @Select("SELECT * FROM budget_period WHERE id=#{id} FOR UPDATE") BudgetPeriod lockPeriod(String id);
     @Select("SELECT * FROM budget_period ORDER BY id") List<BudgetPeriod> periods();

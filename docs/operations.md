@@ -33,7 +33,17 @@
 
 ## Docker 与本地数据库
 
-根目录 [compose.yml](../compose.yml) 默认只启动 MySQL 8.4。库和用户均为 `global_news_flash`，端口 `127.0.0.1:3307`，应用账号和 root 的本地开发默认密码为 `123456`。数据目录为 `A:/DockerData/global-news-flash/mysql`，业务表由应用启动时执行 Flyway 迁移创建。
+根目录 `compose.yml` 是本地基础服务的默认入口，应用镜像和可选应用容器配置放在 `deploy/docker/`，均作为当前运行配置随代码维护：
+
+| 文件 | 用途 |
+| --- | --- |
+| [Dockerfile](../deploy/docker/Dockerfile) | 用 Java 21 编译并打包应用，再生成包含 JRE 和应用 JAR 的运行镜像；不负责启动 MySQL |
+| [compose.yml](../compose.yml) | 根目录默认入口，启动本地 MySQL，供 IDE / 本机 Java 应用或应用容器连接；后续基础服务也在这里维护 |
+| [compose.app.yml](../deploy/docker/compose.app.yml) | 在基础 Compose 配置上增加应用容器，配置镜像构建、数据库依赖、环境变量与端口；需要与 compose.yml 一起使用 |
+
+以下命令均在项目根目录执行。`docker compose` 自动读取根目录的 `compose.yml`，构建上下文、默认 `.env` 读取位置和 `.dockerignore` 均在根目录。可选的 `compose.app.yml` 只在显式指定时加载。
+
+基础 Compose 默认只启动 MySQL 8.4。库和用户均为 `global_news_flash`，端口 `127.0.0.1:3307`，应用账号和 root 的本地开发默认密码为 `123456`。数据目录为 `A:/DockerData/global-news-flash/mysql`，业务表由应用启动时执行 Flyway 迁移创建。
 
 ```powershell
 docker compose up -d
@@ -44,10 +54,10 @@ docker compose stop
 
 IDE Active profiles 设为 `mysql`，本机连接参数在 [application.yml](../src/main/resources/application.yml) 的 `mysql` 条件分段。`NEWS_DB_URL`、`NEWS_DB_USER`、`NEWS_DB_PASSWORD` 可覆盖应用连接，`NEWS_DB_ROOT_PASSWORD` 可覆盖容器初始化密码。已有数据库密码须在 MySQL 中修改，单改环境变量不能更新已有账号。
 
-可选的应用容器使用 [compose.app.yml](../compose.app.yml)，先配置独立运维令牌，再执行：
+可选的应用容器使用 `compose.app.yml`，先配置独立运维令牌，再执行：
 
 ```powershell
-docker compose -f compose.yml -f compose.app.yml up -d --build
+docker compose -f compose.yml -f deploy/docker/compose.app.yml up -d --build
 ```
 
 容器连接 `db:3306`，本机后端连接 `127.0.0.1:3307`，两者访问同一数据库。应用容器默认使用 `mysql` Profile，真实采集、编辑和发布需按配置说明显式开启。容器非 root，运维端口仅映射回环地址。Dockerfile 构建跳过测试，发布前须另行执行 `mvnw verify`。

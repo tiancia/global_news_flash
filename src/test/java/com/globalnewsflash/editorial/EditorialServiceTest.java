@@ -1,12 +1,15 @@
 package com.globalnewsflash.editorial;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.globalnewsflash.editorial.application.EditorialService;
-import com.globalnewsflash.editorial.application.EditorPort;
-import com.globalnewsflash.editorial.application.EditorFailure;
+import com.globalnewsflash.editorial.domain.EditorFailure;
+import com.globalnewsflash.editorial.domain.EditorResponse;
 import com.globalnewsflash.editorial.domain.EditorialDraft;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
-import com.globalnewsflash.editorial.domain.EditorResponse;
 import com.globalnewsflash.editorial.infrastructure.SyntheticEditor;
+import com.globalnewsflash.editorial.port.out.EditorPort;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import java.time.Clock;
@@ -17,9 +20,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EditorialServiceTest {
     private static final Instant NOW = Instant.parse("2026-10-24T10:00:00Z");

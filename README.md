@@ -10,6 +10,7 @@
 
 - [配置与处理规则](docs/configuration.md)：外部服务清单、运行模式、环境变量、来源准入、预算和发布约束。
 - [运维手册](docs/operations.md)：接口、Docker、备份与故障核对。
+- [DDD 架构与模块职责](docs/architecture.md)：领域规则、流程编排、port 与适配器的边界。
 - [application.yml](src/main/resources/application.yml)：完整配置项及默认值；[.env.example](.env.example) 只列常用环境覆盖。
 
 ## 项目结构
@@ -35,10 +36,12 @@ src/main/resources/
   fixtures/          离线演示和测试共用的合成数据
 src/test/            单元与集成测试
 scripts/             离线 smoke、MySQL 备份和恢复
+compose.yml          本地基础服务入口，默认启动 MySQL
+deploy/docker/       应用镜像构建与可选应用容器编排
 docs/                当前配置与运维文档
 ```
 
-业务模块内部按 `application`（用例与接入接口）、`domain`（规则与数据）、`infrastructure`（持久化、业务配置与运行装配）、`interfaces`（HTTP 入口）划分；只建立实际需要的层。外部 HTTP 调用实现集中在 `integrations`，AI、发布与告警分别实现业务侧的 `EditorPort`、`DeliveryGateway`、`NotificationGateway`；各业务模块继续管理准入、预算、队列和重试。数据库迁移保留完整版本链，已执行的迁移不要合并或重写。
+业务模块采用 DDD 与 ports/adapters 分层：`domain` 定义业务模型、规则和状态决策；`application` 通过 port 编排加载、领域决策、持久化和外部调用，并管理事务与租约；`port/in` 定义用例入口，`port/out` 定义仓储、外部能力和只读运行配置；`infrastructure` 实现持久化、配置与运行装配；`interfaces` 接收 HTTP 请求。外部协议实现集中在 `integrations`。Controller、定时任务和模块间协作都依赖 port，domain 只依赖 JDK、领域类型与通用哈希工具。职责与检查方式见[架构说明](docs/architecture.md)。数据库迁移保留完整版本链，已执行的迁移不要合并或重写。
 
 ## 构建与离线验证
 
@@ -66,6 +69,8 @@ java -jar .\target\global-news-flash-0.1.0-SNAPSHOT.jar --spring.profiles.active
 ```
 
 MySQL 默认地址 `127.0.0.1:3307`，数据库与用户为 `global_news_flash`，本地开发密码为 `123456`。数据保存在 `A:/DockerData/global-news-flash/mysql`。应用默认监听 `127.0.0.1:8090`；健康检查为 `/actuator/health`，运维接口需要 `NEWS_OPS_TOKEN`。
+
+以上命令在项目根目录执行。基础服务入口为根目录的 [compose.yml](compose.yml)，应用镜像和可选应用容器配置放在 [deploy/docker/](deploy/docker/)；文件分工与应用容器启动方式见[运维手册](docs/operations.md#docker-与本地数据库)。
 
 要手动采集，改用 `mysql,live` Profile，然后调用 `POST /ops/ingestion/poll`。该 Profile 默认选择 DeepSeek 并启用已配置的 Fed 来源，自动任务和真实发送仍关闭；细节见[配置说明](docs/configuration.md#运行模式)。
 

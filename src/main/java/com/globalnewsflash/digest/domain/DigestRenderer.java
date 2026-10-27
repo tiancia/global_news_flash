@@ -2,7 +2,6 @@ package com.globalnewsflash.digest.domain;
 
 import static com.globalnewsflash.shared.Hashing.sha256;
 
-import com.globalnewsflash.digest.infrastructure.DigestMapper.DigestItem;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;

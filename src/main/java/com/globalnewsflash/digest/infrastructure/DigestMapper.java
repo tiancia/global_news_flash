@@ -1,5 +1,8 @@
 package com.globalnewsflash.digest.infrastructure;
 
+import com.globalnewsflash.digest.domain.Candidate;
+import com.globalnewsflash.digest.domain.DigestRecord;
+import com.globalnewsflash.digest.port.out.DigestRepository;
 import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
@@ -9,12 +12,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
-public interface DigestMapper {
-    record DigestRecord(String id, String digestDate, String target, String eventKey, String publicationId,
-                        String body, String operationIdsPayload, String itemsPayload,
-                        long windowStart, long windowEnd, long createdAt) {}
-    record DigestItem(String operationId, String eventKey, int eventVersion, String body, Instant sentAt) {}
-    record Candidate(String operationId, String eventKey, int eventVersion, Instant sentAt) {}
+public interface DigestMapper extends DigestRepository {
 
     @Select("SELECT * FROM news_digest WHERE digest_date=#{date} AND target=#{target} FOR UPDATE")
     DigestRecord lockDate(@Param("date") String date, @Param("target") String target);

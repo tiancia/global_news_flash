@@ -150,7 +150,7 @@ spring:
     password: ""
 
 ---
-# Local Docker defaults. compose.app.yml overrides the URL to db:3306 for a containerized app.
+# Local Docker defaults. deploy/docker/compose.app.yml overrides the URL to db:3306 for a containerized app.
 spring:
   config:
     activate:

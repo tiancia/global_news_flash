@@ -37,7 +37,7 @@ RSS 和网页抓取同样属于外部 HTTP 依赖。默认 OFFLINE 不调用这�
 | `integrations/webhook` | 单次 HTTP 投递、鉴权、超时处理；实现 `NotificationGateway` | `automation` 的告警待办、领取、退避与最多 5 次尝试 |
 | `integrations/http` | 有大小限制的响应读取，供 AI、采集和 Telegram 复用 | 各接入自己的状态码、失败含义与重试决定 |
 
-新增供应商时，在对应接入包中实现业务接口并添加模拟请求测试；配置仍加入 `application.yml`，按需补充 `.env.example` 和 Compose 环境变量转发，同时更新此清单。接入包采用包级组织，不增加独立部署服务或 Maven 子工程。
+新增供应商时，在对应接入包中实现所属业务模块 `port/out` 的接口并添加模拟请求测试；配置仍加入 `application.yml`，按需补充 `.env.example` 和 Compose 环境变量转发，同时更新此清单。业务校验与费用、重试规则放在 domain，application 通过 port 编排。接入包采用包级组织，不增加独立部署服务或 Maven 子工程；层间边界见[架构说明](architecture.md)。
 
 公共 HTTP 工具不自动重试：Telegram 超时可能发生在远端已发送之后，AI 超时可能已经计费；这些不确定结果必须保留给现有业务流程处理。采集的 HTTPS、域名与响应大小限制继续由来源接入维护，Webhook 接收端仍需按告警 `id` 去重。
 
