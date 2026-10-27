@@ -6,7 +6,7 @@ import com.globalnewsflash.publication.domain.PublicationAlert;
 import com.globalnewsflash.publication.domain.PublicationResolution;
 import com.globalnewsflash.publication.infrastructure.PublicationMapper;
 import com.globalnewsflash.publication.infrastructure.PublicationProperties;
-import com.globalnewsflash.publication.infrastructure.TelegramProperties;
+import com.globalnewsflash.integrations.telegram.TelegramProperties;
 import com.globalnewsflash.automation.infrastructure.RuntimeProperties;
 import java.time.Clock;
 import java.time.Instant;

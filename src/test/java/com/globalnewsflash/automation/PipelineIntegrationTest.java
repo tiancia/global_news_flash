@@ -5,7 +5,7 @@ import com.globalnewsflash.automation.application.BudgetService;
 import com.globalnewsflash.automation.infrastructure.PipelineMapper;
 import com.globalnewsflash.editorial.domain.EditorialPolicy;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
-import com.globalnewsflash.ingestion.infrastructure.UsgsAdapter;
+import com.globalnewsflash.integrations.sources.UsgsAdapter;
 import com.globalnewsflash.publication.application.PublicationService;
 import java.nio.charset.StandardCharsets;
 import java.time.*;

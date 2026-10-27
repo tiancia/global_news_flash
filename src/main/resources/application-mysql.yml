@@ -1,7 +1,0 @@
-# Local Docker defaults. compose.app.yml overrides the URL to db:3306 for a containerized app.
-spring:
-  datasource:
-    url: ${NEWS_DB_URL:jdbc:mysql://127.0.0.1:3307/global_news_flash?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=UTC}
-    username: ${NEWS_DB_USER:global_news_flash}
-    password: ${NEWS_DB_PASSWORD:123456}
-    driver-class-name: com.mysql.cj.jdbc.Driver

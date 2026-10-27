@@ -1,7 +1,7 @@
 package com.globalnewsflash.publication.interfaces;
 
 import com.globalnewsflash.publication.application.PublicationService;
-import com.globalnewsflash.publication.infrastructure.TelegramMessageText;
+import com.globalnewsflash.integrations.telegram.TelegramMessageText;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

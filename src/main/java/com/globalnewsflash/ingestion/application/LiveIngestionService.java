@@ -9,7 +9,7 @@ import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import com.globalnewsflash.ingestion.infrastructure.LiveIngestionMapper;
 import com.globalnewsflash.ingestion.infrastructure.LiveIngestionProperties;
-import com.globalnewsflash.ingestion.infrastructure.LiveSourceCollector;
+import com.globalnewsflash.integrations.sources.LiveSourceCollector;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;

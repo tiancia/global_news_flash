@@ -4,11 +4,42 @@
 
 ## 配置入口
 
-完整环境变量、默认值及模型配置统一在 [application.yml](../src/main/resources/application.yml) 维护。Profile 文件只声明差异；[.env.example](../.env.example) 是常用覆盖示例。`java -jar` 不自动读取 `.env`，需使用进程或 IDE 环境变量，修改后重启。Compose 转发声明的变量，未设置的值使用应用默认配置。
+完整环境变量、默认值及模型配置统一在 [application.yml](../src/main/resources/application.yml) 维护。首段是公共默认值，后续用 `---` 分隔的文档通过 `spring.config.activate.on-profile` 按需启用，只声明差异；[.env.example](../.env.example) 是常用覆盖示例。`java -jar` 不自动读取 `.env`，需使用进程或 IDE 环境变量，修改后重启。Compose 转发声明的变量，未设置的值使用应用默认配置。
 
-密钥只从环境变量读取：`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`NEWS_TELEGRAM_BOT_TOKEN`、`NEWS_OPS_TOKEN`。运维令牌至少 32 字符。密钥不要写入 Git、日志、新闻 URL 或请求正文。
+运行配置集中在这一份 YAML 中，原有 Profile 名称和启动参数保持不变。测试配置独立保留在 `src/test/resources/application-test.yml`，由测试的 `test` Profile 启用，不打入应用 JAR。
+
+密钥只从环境变量读取：`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`NEWS_TELEGRAM_BOT_TOKEN`、`NEWS_ALERT_WEBHOOK_TOKEN`、`NEWS_OPS_TOKEN`。运维令牌至少 32 字符。密钥不要写入 Git、日志、新闻 URL 或请求正文。
 
 可选变量应保持未设置，或填写有效值。空字符串也会被转发，不能用来表示恢复默认值；这使容器与本机运行采用相同规则。
+
+## 外部服务清单与代码边界
+
+外部服务实现集中在 [integrations](../src/main/java/com/globalnewsflash/integrations)。配置仍统一在 `application.yml`，现有配置前缀、环境变量和 Profile 不变；MySQL / H2 属于持久化依赖，继续由数据库配置管理。表中的状态是仓库默认值，实际启用情况还受环境变量、来源状态和全局暂停影响。
+
+| 服务 | 请求与用途 | 主要配置 | 默认启用情况 |
+| --- | --- | --- | --- |
+| OpenAI | `POST /v1/responses`，结构化新闻编辑 | `news.openai`；`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` | 基础配置选择 OpenAI；OFFLINE 使用合成编辑器 |
+| DeepSeek | `POST /chat/completions`，JSON 新闻编辑 | `news.deepseek`；`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` | `live` 默认选择；`NEWS_AI_PROVIDER` 可切换供应商 |
+| Telegram | `getMe` / `getChat` / `getChatMember` 预检，`sendMessage` / `editMessageText` 发布与修订 | `news.telegram`；`NEWS_TELEGRAM_ENABLED`、`NEWS_TELEGRAM_BOT_TOKEN`、`NEWS_TELEGRAM_CHAT_ID` | 默认关闭；LIVE、外部访问和发送开关均满足后仍需通过发布检查 |
+| Fed | GET RSS 列表，再 GET 公告 HTML 正文 | `news.ingestion.fed`；`NEWS_FED_URL`、`NEWS_FED_ARTICLE_SELECTOR`、`NEWS_FED_*` 准入配置 | `live` 默认启用与批准；自动采集调度仍默认关闭 |
+| USGS | GET 地震 GeoJSON feed | `news.ingestion.usgs`；`NEWS_USGS_URL`、`NEWS_USGS_*` 准入配置 | 默认关闭，需单独启用与批准 |
+| GDELT | GET 配置的新闻发现 JSON 地址 | `news.ingestion.gdelt`；`NEWS_GDELT_URL`、`NEWS_GDELT_*` 准入配置 | 默认关闭，仅作发现 |
+| RSS / Atom | GET 配置的 feed，按需 GET 允许域名下的正文网页 | `news.ingestion.rss-feeds-json`；`NEWS_RSS_FEEDS_JSON` | 默认为空；每个来源单独配置与批准 |
+| 告警 Webhook | POST 告警 JSON，可选 Bearer 鉴权 | `news.alert`；`NEWS_ALERT_ENABLED`、`NEWS_ALERT_WEBHOOK_URL`、`NEWS_ALERT_WEBHOOK_TOKEN` | 默认关闭；仅在 LIVE 且允许外部访问时投递 |
+
+RSS 和网页抓取同样属于外部 HTTP 依赖。默认 OFFLINE 不调用这些服务；切换到 `live` 也不会在应用启动时自动调用模型或发送消息。上述清单说明代码支持的接入，并不代表真实账号、权限、额度和远端服务已完成验收；本地测试使用模拟 HTTP 客户端与合成数据，不会发起真实 AI、Telegram 或 Webhook 请求。
+
+| 接入代码 | 职责 | 业务侧保留的职责 |
+| --- | --- | --- |
+| `integrations/ai` | 提供商选择、密钥与模型配置、请求封装、usage 和成稿解析；实现 `EditorPort` | `editorial` 的证据校验；`automation` 的预算、编辑任务与调度 |
+| `integrations/sources` | feed / 正文下载、协议解析、内容提取，通过 `LiveSourceCollector` 提供采集入口 | `ingestion` 的来源配置与准入、租约、快照进度、待办与持久化 |
+| `integrations/telegram` | Bot API、频道权限检查、消息格式、投递结果映射；实现 `DeliveryGateway` | `publication` 的队列、频率限制、结果未知状态与人工核对 |
+| `integrations/webhook` | 单次 HTTP 投递、鉴权、超时处理；实现 `NotificationGateway` | `automation` 的告警待办、领取、退避与最多 5 次尝试 |
+| `integrations/http` | 有大小限制的响应读取，供 AI、采集和 Telegram 复用 | 各接入自己的状态码、失败含义与重试决定 |
+
+新增供应商时，在对应接入包中实现业务接口并添加模拟请求测试；配置仍加入 `application.yml`，按需补充 `.env.example` 和 Compose 环境变量转发，同时更新此清单。接入包采用包级组织，不增加独立部署服务或 Maven 子工程。
+
+公共 HTTP 工具不自动重试：Telegram 超时可能发生在远端已发送之后，AI 超时可能已经计费；这些不确定结果必须保留给现有业务流程处理。采集的 HTTPS、域名与响应大小限制继续由来源接入维护，Webhook 接收端仍需按告警 `id` 去重。
 
 ## 运行模式
 
@@ -19,6 +50,8 @@
 | `mysql` | 本地 MySQL，默认 OFFLINE |
 | `mysql,live` | MySQL 加真实流程初始配置 |
 | `offline,live` | H2 加真实流程初始配置，不能用于证明 MySQL 兼容性 |
+
+`offline` 这个 Profile 名称保留以兼容现有命令，其配置分段只选择 H2 数据库；是否允许真实外部访问由 `news.runtime.mode` 和 `news.runtime.external-enabled` 控制。数据库 Profile 选择 `offline` 或 `mysql` 其中一个；同一文件中的配置分段按文档顺序覆盖。
 
 `live` 默认启用 LIVE、外部访问和 Fed 采集，选择 DeepSeek；每来源处理 3 条、每轮编辑 1 条、`policy-ready=true`。其余模式默认选择 OpenAI。环境变量可覆盖配置中的占位值；`live` 的模式固定为 LIVE。启动仅注册来源，自动任务、Telegram 发送、额外发布 worker、日报、告警仍默认关闭。LIVE 拒绝固定演示时钟，因此不要与 `demo` 混用。
 

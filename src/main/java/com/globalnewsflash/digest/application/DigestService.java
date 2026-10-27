@@ -8,7 +8,7 @@ import com.globalnewsflash.digest.infrastructure.DigestMapper.DigestRecord;
 import com.globalnewsflash.digest.infrastructure.DigestProperties;
 import com.globalnewsflash.publication.application.PublicationService;
 import com.globalnewsflash.publication.infrastructure.PublicationMapper;
-import com.globalnewsflash.publication.infrastructure.TelegramProperties;
+import com.globalnewsflash.integrations.telegram.TelegramProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;

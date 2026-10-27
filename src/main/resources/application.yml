@@ -1,3 +1,4 @@
+# Shared defaults. Profile-specific overrides are in the conditional documents below.
 spring:
   autoconfigure:
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
@@ -134,3 +135,65 @@ news:
       license-version: ${NEWS_GDELT_LICENSE_VERSION:pending}
       permitted-producers: ${NEWS_GDELT_PERMITTED_PRODUCERS:}
       url: ${NEWS_GDELT_URL:}
+
+---
+# offline selects the development H2 database; news.runtime controls external access.
+# H2 is not evidence of MySQL transaction compatibility.
+spring:
+  config:
+    activate:
+      on-profile: offline
+  datasource:
+    url: jdbc:h2:file:./data/news;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+---
+# Local Docker defaults. compose.app.yml overrides the URL to db:3306 for a containerized app.
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    url: ${NEWS_DB_URL:jdbc:mysql://127.0.0.1:3307/global_news_flash?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=UTC}
+    username: ${NEWS_DB_USER:global_news_flash}
+    password: ${NEWS_DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+---
+# Combine live with mysql (local Docker database) or offline (local H2 file).
+# Initial setup permits manual collection only; no client is called at startup.
+spring:
+  config:
+    activate:
+      on-profile: live
+news:
+  runtime:
+    mode: LIVE
+    external-enabled: ${NEWS_EXTERNAL_ENABLED:true}
+    preferred-provider: ${NEWS_AI_PROVIDER:deepseek}
+  ingestion:
+    enabled: ${NEWS_INGESTION_ENABLED:true}
+    max-items-per-source: ${NEWS_MAX_ITEMS_PER_SOURCE:3}
+    fed:
+      enabled: ${NEWS_FED_ENABLED:true}
+      approved: ${NEWS_FED_APPROVED:true}
+      # Reviewed 2026-10-26: https://www.federalreserve.gov/disclaimer.htm
+      # Board-authored announcement text only, with attribution and the source URL.
+      # Excludes non-Board materials, photos, seals, logos and linked attachments.
+      license-version: ${NEWS_FED_LICENSE_VERSION:fed-board-announcement-text-2026-10-26}
+      permitted-producers: ${NEWS_FED_PERMITTED_PRODUCERS:federal-reserve-board}
+  automation:
+    policy-ready: ${NEWS_POLICY_READY:true}
+    batch-size: ${NEWS_AUTOMATION_BATCH_SIZE:1}
+
+---
+# Explicit fictional scenario clock; never a production operating policy.
+spring:
+  config:
+    activate:
+      on-profile: demo
+news:
+  clock:
+    fixed: 2026-10-24T14:00:00Z

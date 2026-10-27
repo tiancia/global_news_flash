@@ -8,7 +8,7 @@
 
 ## 从哪里开始
 
-- [配置与处理规则](docs/configuration.md)：运行模式、环境变量、来源准入、预算和发布约束。
+- [配置与处理规则](docs/configuration.md)：外部服务清单、运行模式、环境变量、来源准入、预算和发布约束。
 - [运维手册](docs/operations.md)：接口、Docker、备份与故障核对。
 - [application.yml](src/main/resources/application.yml)：完整配置项及默认值；[.env.example](.env.example) 只列常用环境覆盖。
 
@@ -16,16 +16,21 @@
 
 ```text
 src/main/java/com/globalnewsflash/
-  ingestion/     来源适配、正文抓取、待办与来源准入
+  ingestion/     来源准入、采集状态、待办与素材持久化
   editorial/     编辑契约、证据校验和成稿规则
-  ai/            OpenAI / DeepSeek 适配及共用配置、传输、解析
-  publication/   发布队列、重试、人工核对与 Telegram
+  publication/   发布队列、重试、人工核对与投递接口
   digest/        从已发布内容生成日报
   automation/    流程编排、预算、调度、运维与报表
   growth/        离线推广与邀请归因演示
-  shared/        哈希和有大小限制的 HTTP 响应读取
+  integrations/  外部服务接入
+    ai/          OpenAI / DeepSeek、供应商选择、配置与响应解析
+    sources/     Fed / USGS / GDELT / RSS、正文抓取与解析
+    telegram/    Bot API、权限检查、消息格式与配置
+    webhook/     告警 Webhook 投递与配置
+    http/        有大小限制的 HTTP 响应读取
+  shared/        通用哈希工具
 src/main/resources/
-  application*.yml   通用配置与运行 Profile
+  application.yml    通用配置与按 Profile 启用的配置分段
   db/migration/      数据库迁移历史
   fixtures/          离线演示和测试共用的合成数据
 src/test/            单元与集成测试
@@ -33,7 +38,7 @@ scripts/             离线 smoke、MySQL 备份和恢复
 docs/                当前配置与运维文档
 ```
 
-业务模块内部按 `application`（用例）、`domain`（规则与数据）、`infrastructure`（数据库和外部适配）、`interfaces`（HTTP 入口）划分；只建立实际需要的层。数据库迁移保留完整版本链，已执行的迁移不要合并或重写。
+业务模块内部按 `application`（用例与接入接口）、`domain`（规则与数据）、`infrastructure`（持久化、业务配置与运行装配）、`interfaces`（HTTP 入口）划分；只建立实际需要的层。外部 HTTP 调用实现集中在 `integrations`，AI、发布与告警分别实现业务侧的 `EditorPort`、`DeliveryGateway`、`NotificationGateway`；各业务模块继续管理准入、预算、队列和重试。数据库迁移保留完整版本链，已执行的迁移不要合并或重写。
 
 ## 构建与离线验证
 

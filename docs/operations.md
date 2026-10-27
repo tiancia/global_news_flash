@@ -42,7 +42,7 @@ docker compose logs --tail 80 db
 docker compose stop
 ```
 
-IDE Active profiles 设为 `mysql`，本机连接参数在 [application-mysql.yml](../src/main/resources/application-mysql.yml)。`NEWS_DB_URL`、`NEWS_DB_USER`、`NEWS_DB_PASSWORD` 可覆盖应用连接，`NEWS_DB_ROOT_PASSWORD` 可覆盖容器初始化密码。已有数据库密码须在 MySQL 中修改，单改环境变量不能更新已有账号。
+IDE Active profiles 设为 `mysql`，本机连接参数在 [application.yml](../src/main/resources/application.yml) 的 `mysql` 条件分段。`NEWS_DB_URL`、`NEWS_DB_USER`、`NEWS_DB_PASSWORD` 可覆盖应用连接，`NEWS_DB_ROOT_PASSWORD` 可覆盖容器初始化密码。已有数据库密码须在 MySQL 中修改，单改环境变量不能更新已有账号。
 
 可选的应用容器使用 [compose.app.yml](../compose.app.yml)，先配置独立运维令牌，再执行：
 
