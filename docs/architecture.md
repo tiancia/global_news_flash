@@ -1,6 +1,6 @@
 # 架构与开发
 
-[首页](../README.md) · [配置](configuration.md) · [运维](operations.md) · **架构**
+[首页](../README.md) · [配置](configuration.md) · [运维](operations.md) · **架构** · [模块](modules.md)
 
 项目采用模块化单体，以 DDD 表达业务规则，通过 ports/adapters 隔离流程与技术实现。
 
@@ -35,7 +35,7 @@ application 可以根据领域返回结果决定下一步流程；资格校验�
 
 ## 模块职责
 
-代码位于 [com/globalnewsflash](../src/main/java/com/globalnewsflash)，每个模块按上述层次组织。
+代码位于 [com/globalnewsflash](../src/main/java/com/globalnewsflash)，每个模块按上述层次组织。完整调用链、主要入口、数据所有权和验证边界见[模块与链路导航](modules.md)；各模块与外部接入子包的 `package-info.java` 提供就近说明。
 
 | 模块 | 业务职责 |
 | --- | --- |
@@ -45,6 +45,8 @@ application 可以根据领域返回结果决定下一步流程；资格校验�
 | `digest` | 已发布新闻的筛选、窗口、长度及日报快照一致性 |
 | `automation` | 预算、编辑任务、运营就绪条件与告警规则，编排主处理流程 |
 | `growth` | 合成内容、目标授权、幂等与邀请归因，仅用于离线演示 |
+| `integrations` | 来源、AI、Telegram 与 Webhook 协议适配及公共 HTTP 传输 |
+| `shared` | 稳定哈希、快照编解码契约与 JSON 适配 |
 
 来源注册归 ingestion 所有，其他模块通过 `SourceRegistry` 读取准入声明。业务快照归入所属 domain，用例结果定义在入站 port 中。
 

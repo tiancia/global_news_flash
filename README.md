@@ -4,7 +4,7 @@
 
 **采集 → 证据校验 → AI 编辑 → 发布队列 → 发送前复验 → Telegram**
 
-[项目结构](#项目结构) · [本地启动](#本地启动) · [启动后检查](#启动后检查) · [文档导航](#文档导航)
+[项目结构](#项目结构) · [模块与链路](docs/modules.md) · [本地启动](#本地启动) · [启动后检查](#启动后检查) · [文档导航](#文档导航)
 
 ## 项目概览
 
@@ -28,7 +28,7 @@ deploy/docker/                    应用 Dockerfile 与可选容器编排
 docs/                             配置、运维与架构文档
 ```
 
-模块职责与 DDD 分层见[架构与开发](docs/architecture.md)。
+模块入口、调用链和数据所有权见[模块与链路导航](docs/modules.md)，DDD 分层见[架构与开发](docs/architecture.md)。各模块的 `package-info.java` 提供贴近代码的职责说明。
 
 ## 本地启动
 
@@ -109,6 +109,7 @@ Invoke-RestMethod "$newsBase/ops/pause" -Method Post `
 
 | 想了解什么 | 去哪里看 |
 | --- | --- |
+| 每个模块负责什么、从哪个类读起、链路如何串联 | [模块与链路导航](docs/modules.md) |
 | 运行模式、环境变量、来源与处理规则 | [运行配置](docs/configuration.md) |
 | 暂停与恢复、接口、Docker 和故障处理 | [日常运维](docs/operations.md) |
 | 模块职责、DDD 分层和开发约定 | [架构与开发](docs/architecture.md) |

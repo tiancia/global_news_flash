@@ -1,6 +1,6 @@
 # 日常运维
 
-[首页](../README.md) · [配置](configuration.md) · **运维** · [架构](architecture.md)
+[首页](../README.md) · [配置](configuration.md) · **运维** · [架构](architecture.md) · [模块](modules.md)
 
 [运行控制](#运行控制) · [Docker 与数据](#docker-与数据) · [异常处理](#异常处理) · [接口索引](#接口索引)
 
@@ -127,11 +127,20 @@ MySQL 数据位于 `A:/DockerData/global-news-flash/mysql`，连接参数见[数
 | 应用无法连接 MySQL | 查看 `docker compose ps` 和 db 日志，核对连接地址与已有账号密码 |
 | 健康检查正常但没有自动处理 | 检查 Profile、两个执行开关、`ready/reasons` 和 `paused` |
 | 来源被禁用或无有效待办 | 查看 `/ops/sources`、`/ops/ingestion` 和 `/ops/ingestion/inbox` |
+| 同一来源持续报错且快照 offset 不动 | 按[来源快照停滞](#来源快照停滞)核对正文抓取和持久化进度 |
 | 运维接口返回 401 | 检查请求头、令牌是否一致，以及启动进程是否加载了 `NEWS_OPS_TOKEN` |
 | 模型明确拒绝 | 修正密钥、额度等原因；对可重试任务显式提交 retry |
 | 模型 `UNCERTAIN` | 保留预算，先核对供应商账单，再结算费用并单独申请重试 |
 | Telegram 429 | 按 `retry_after` 和本地限额退避 |
 | Telegram `UNKNOWN` | 先核对频道、尝试记录及实际消息，不盲目重发 |
+
+### 来源快照停滞
+
+查看 `/ops/ingestion` 的 `snapshotPending`、`snapshotOffset`、`consecutiveFailures`、`errorCode` 和 `nextPollAt`。正常分批时快照可以暂时存在；只有跨多次实际轮询仍报错且 offset 不动，才需要按停滞排查。
+
+当前 Fed/RSS 正文抓取中，一篇文章 HTTP 失败或正文提取失败会中断整页。整页没有提交时，成功抓取的其他素材也不会入库；持久化快照保留，退避结束后继续同一页。重启不会自动换成最新 feed。
+
+先核对来源页面是否仍可访问、主机是否获准、正文 selector 是否匹配，以及失败原因。可通过来源状态接口暂时禁用该来源，继续处理其他已准入来源。当前没有逐篇隔离、受控跳过或重置来源快照的运维接口；持续失败需要代码恢复能力，不能把正常重试或重启当作已经恢复。不要为绕过失败而放开来源准入或盲目删除待办、编辑和发布记录。
 
 ### 费用与投递核对
 

@@ -1,6 +1,6 @@
 # 运行配置
 
-[首页](../README.md) · **配置** · [运维](operations.md) · [架构](architecture.md)
+[首页](../README.md) · **配置** · [运维](operations.md) · [架构](architecture.md) · [模块](modules.md)
 
 [配置入口](#配置入口) · [运行模式](#运行模式) · [数据库](#数据库) · [外部服务](#外部服务) · [处理规则](#处理规则与限额)
 
