@@ -1,6 +1,7 @@
 package com.globalnewsflash.ingestion.infrastructure;
 
 import com.globalnewsflash.ingestion.domain.InboxRow;
+import com.globalnewsflash.ingestion.domain.ArticleFailure;
 import com.globalnewsflash.ingestion.domain.SourceRegistration;
 import com.globalnewsflash.ingestion.domain.SourceState;
 import com.globalnewsflash.ingestion.port.out.LiveIngestionRepository;
@@ -13,6 +14,19 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface LiveIngestionMapper extends LiveIngestionRepository {
+
+    @Select("SELECT * FROM ingestion_article_failure WHERE id=#{id}")
+    ArticleFailure articleFailure(String id);
+    @Insert("INSERT INTO ingestion_article_failure VALUES(#{id},#{sourceId},#{snapshotKey},#{itemKey},#{attempts},#{state},#{reasonCode},#{updatedAt})")
+    void insertArticleFailure(ArticleFailure failure);
+    @Update("UPDATE ingestion_article_failure SET attempts=#{attempts},state=#{state},reason_code=#{reasonCode},updated_at=#{updatedAt} WHERE id=#{id}")
+    void updateArticleFailure(ArticleFailure failure);
+    @Update("UPDATE ingestion_article_failure SET state='RECOVERED',updated_at=#{now} WHERE id=#{id} AND state='RETRY'")
+    void recoverArticleFailure(@Param("id") String id, @Param("now") long now);
+    @Select("SELECT * FROM ingestion_article_failure ORDER BY updated_at DESC,id LIMIT 100")
+    List<ArticleFailure> articleFailures();
+    @Select("SELECT item_key FROM ingestion_article_failure WHERE source_id=#{sourceId} AND snapshot_key=#{snapshotKey} AND state='QUARANTINED'")
+    List<String> quarantinedItems(@Param("sourceId") String sourceId, @Param("snapshotKey") String snapshotKey);
 
     @Insert("""
             INSERT INTO ingestion_source_state(source_id,registered,next_poll_at,consecutive_failures,last_item_count,lease_until,snapshot_offset)

@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -37,15 +38,22 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
     private final HttpClient client;
     private Permission cachedPermission;
 
+    @Autowired
     public TelegramDeliveryGateway(RuntimeSettings runtime, TelegramProperties properties,
             PublicationRepository publications, JsonMapper json, Clock clock) {
+        this(runtime, properties, publications, json, clock, HttpClient.newBuilder()
+                .connectTimeout(properties.getConnectTimeout()).followRedirects(HttpClient.Redirect.NEVER)
+                .version(HttpClient.Version.HTTP_1_1).build());
+    }
+
+    TelegramDeliveryGateway(RuntimeSettings runtime, TelegramProperties properties,
+            PublicationRepository publications, JsonMapper json, Clock clock, HttpClient client) {
         this.runtime = runtime;
         this.properties = properties;
         this.publications = publications;
         this.json = json;
         this.clock = clock;
-        this.client = HttpClient.newBuilder().connectTimeout(properties.getConnectTimeout())
-                .followRedirects(HttpClient.Redirect.NEVER).version(HttpClient.Version.HTTP_1_1).build();
+        this.client = client;
     }
 
     @Override
@@ -81,9 +89,9 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
         try {
             permission = permission();
         } catch (PreflightFailure failure) {
-            return DeliveryResult.failed(failure.code);
+            return failure.result;
         } catch (RuntimeException failure) {
-            return DeliveryResult.failed("TELEGRAM_PREFLIGHT_UNAVAILABLE");
+            return DeliveryResult.retryable("TELEGRAM_PREFLIGHT_UNAVAILABLE", Duration.ofSeconds(30));
         }
         if (edit && !permission.canEdit()) return DeliveryResult.failed("TELEGRAM_EDIT_PERMISSION_REQUIRED");
         if (operation.leaseUntil() == null || !clock.instant().isBefore(operation.leaseUntil())) {
@@ -175,6 +183,15 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
 
     private JsonNode preflight(String method, Map<String, Object> payload) {
         ApiResponse response = call(method, payload);
+        int error = response.body().path("error_code").asInt(response.status());
+        if (response.status() == 429 || error == 429) {
+            long seconds = response.body().path("parameters").path("retry_after").asLong(30);
+            if (seconds <= 0 || seconds > 604_800) seconds = 30;
+            throw new PreflightFailure(DeliveryResult.rateLimited(Duration.ofSeconds(seconds)));
+        }
+        if (response.status() >= 500 || error >= 500) {
+            throw new PreflightFailure(DeliveryResult.retryable("TELEGRAM_PREFLIGHT_UNAVAILABLE", Duration.ofSeconds(30)));
+        }
         if (response.status() != 200 || !response.body().path("ok").asBoolean(false)
                 || !response.body().path("result").isObject()) {
             throw new PreflightFailure("TELEGRAM_PREFLIGHT_REJECTED");
@@ -226,8 +243,9 @@ public final class TelegramDeliveryGateway implements DeliveryGateway {
     private record Permission(long chatId, boolean canEdit, Instant expiresAt) {}
     private record ApiResponse(int status, JsonNode body) {}
     private static final class PreflightFailure extends RuntimeException {
-        private final String code;
-        private PreflightFailure(String code) { super(code); this.code = code; }
+        private final DeliveryResult result;
+        private PreflightFailure(String code) { this(DeliveryResult.failed(code)); }
+        private PreflightFailure(DeliveryResult result) { super(result.error()); this.result = result; }
     }
 
 }

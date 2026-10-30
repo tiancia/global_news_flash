@@ -30,7 +30,9 @@ Invoke-RestMethod "$newsBase/ops/automation" -Headers $newsHeaders
 | --- | --- |
 | `mode` / `externalEnabled` | 真实流程需要 `LIVE` / `true` |
 | `schedulerEnabled` / `telegramDeliveryEnabled` | 自动调度与真实发送是否开启 |
-| `ready` / `reasons` | 本地配置检查是否通过；未通过时按原因处理 |
+| `ready` / `reasons` | 编辑与发布的本地配置是否同时就绪；包括 TG 开关及 Token/频道配置格式 |
+| `editingReady` / `publicationReady` | 分别表示编辑、发布配置就绪；明确关闭 TG 时仍可手动运行预览流程 |
+| `running` | 是否允许自动运行：配置就绪、调度开启且未暂停；不代表当前正在发送 |
 | `paused` | 是否处于全局暂停；`true` 时主自动流程不执行 |
 | `runs` | 最近自动周期的结果、处理数量与原因码 |
 
@@ -132,15 +134,18 @@ MySQL 数据位于 `A:/DockerData/global-news-flash/mysql`，连接参数见[数
 | 模型明确拒绝 | 修正密钥、额度等原因；对可重试任务显式提交 retry |
 | 模型 `UNCERTAIN` | 保留预算，先核对供应商账单，再结算费用并单独申请重试 |
 | Telegram 429 | 按 `retry_after` 和本地限额退避 |
+| Telegram 发送前查询超时或临时服务故障 | 进入 `RETRY_WAIT`，按退避与最大尝试次数重试；权限明确被拒绝仍失败 |
 | Telegram `UNKNOWN` | 先核对频道、尝试记录及实际消息，不盲目重发 |
 
 ### 来源快照停滞
 
 查看 `/ops/ingestion` 的 `snapshotPending`、`snapshotOffset`、`consecutiveFailures`、`errorCode` 和 `nextPollAt`。正常分批时快照可以暂时存在；只有跨多次实际轮询仍报错且 offset 不动，才需要按停滞排查。
 
-当前 Fed/RSS 正文抓取中，一篇文章 HTTP 失败或正文提取失败会中断整页。整页没有提交时，成功抓取的其他素材也不会入库；持久化快照保留，退避结束后继续同一页。重启不会自动换成最新 feed。
+Fed/RSS 正文按文章隔离失败，正常素材先入库。失败文章在同一快照中最多尝试三次；等待重试期间保留该页 offset，达到上限后记录为 `QUARANTINED` 并继续推进快照。尝试次数保存在数据库，重启不会重置。同一快照中已隔离的文章不会再次抓取；新的 feed 内容形成新的快照。
 
-先核对来源页面是否仍可访问、主机是否获准、正文 selector 是否匹配，以及失败原因。可通过来源状态接口暂时禁用该来源，继续处理其他已准入来源。当前没有逐篇隔离、受控跳过或重置来源快照的运维接口；持续失败需要代码恢复能力，不能把正常重试或重启当作已经恢复。不要为绕过失败而放开来源准入或盲目删除待办、编辑和发布记录。
+通过 `/ops/ingestion/failures` 查看最近 100 条逐篇失败记录（来源、快照/条目标识、次数、状态和原因码），通过 `/ops/automation/alerts` 查看 `ARTICLE_RETRY_PENDING` / `ARTICLE_QUARANTINED` 告警。文章恢复后记录为 `RECOVERED`。这些标识是哈希值，不返回文章正文或请求凭据。
+
+feed 本身下载/解析失败、数据库不可用、来源准入变化和队列满仍按来源级故障处理。核对来源页面、主机准入和正文 selector；不要通过放开准入或删除业务记录绕过问题。首次运行修复版本会由 Flyway 应用 V11，新增逐篇失败记录表。
 
 ### 费用与投递核对
 
@@ -152,6 +157,7 @@ MySQL 数据位于 `A:/DockerData/global-news-flash/mysql`，连接参数见[数
 | `note` | 核对依据，1～1000 个字符 |
 
 结算后任务转为 `ACCOUNTED`。如需新成稿，再调用该任务的 `/retry`；明确拒绝的 `RETRYABLE` 任务也允许重试。
+因重复语句、数字/引用不匹配、格式错误或超长成稿而 `HELD`、且费用已结算的任务，也支持显式 `/editor-jobs/{id}/retry`；`/ingestion/inbox/{id}/retry` 会同时授权对应编辑任务重试。过期、来源撤销、风险审核、已入发布队列和费用不确定的稿件不能通过此入口绕过校验。普通轮询不会自动重新生成 `HELD` 稿件。
 重试可能产生新的模型请求和费用。费用结算不会发布丢失的响应，发布仍受暂停和发送前复验约束。
 
 **Telegram 投递不确定**：核对频道实际消息和 `/attempts` 后，调用 `/ops/publications/{id}/resolve`。
@@ -190,6 +196,7 @@ MySQL 数据位于 `A:/DockerData/global-news-flash/mysql`，连接参数见[数
 | GET | `/ingestion` | 轮询与快照进度 |
 | POST | `/ingestion/poll` | 仅采集 |
 | GET | `/ingestion/inbox` | 待办状态，不返回正文 |
+| GET | `/ingestion/failures` | 逐篇抓取失败、重试与隔离记录 |
 | POST | `/ingestion/inbox/{id}/retry` | 重新排队有效的失败或挂起项 |
 | GET | `/events` | 编辑版本与决策 |
 | GET | `/editor-jobs` | 模型任务 |

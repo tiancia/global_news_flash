@@ -53,6 +53,7 @@ public class LivePipelineService implements LivePipelineUseCase {
     private final SnapshotCodec json;
     private final Clock clock;
     private final TransactionTemplate tx;
+    private final TransactionTemplate retryTx;
 
     public LivePipelineService(PipelineRepository pipeline, LiveAutomationRepository jobs, EditorialUseCase editorial,
             PublicationUseCase publications, BudgetUseCase budgets, ModelPricing ai,
@@ -65,6 +66,7 @@ public class LivePipelineService implements LivePipelineUseCase {
         tx = new TransactionTemplate(manager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        retryTx = new TransactionTemplate(manager);
     }
 
     private record Prepared(EditorJob job, List<SourcePolicy> sources, PipelineUseCase.PipelineRun result) {}
@@ -72,6 +74,7 @@ public class LivePipelineService implements LivePipelineUseCase {
     public PipelineUseCase.PipelineRun process(List<SourceMaterial> materials, EditorialPolicy policy,
                                               PipelineUseCase.BudgetAllocation allocation) {
         if (!runtime.live()) throw new IllegalStateException("LIVE_EXTERNAL_ACCESS_DISABLED");
+        if (telegram.isEnabled() && !telegram.isConfigured()) throw new IllegalStateException("TELEGRAM_CONFIGURATION_REQUIRED");
         PipelinePolicy.requireLiveRequest(materials);
         Prepared prepared = tx.execute(status -> prepare(materials, policy, allocation));
         if (prepared.result() != null) return prepared.result();
@@ -106,6 +109,8 @@ public class LivePipelineService implements LivePipelineUseCase {
             if (previous == null || !"RETRYABLE".equals(previous.state()) || version != existing.eventVersion())
                 return new Prepared(null, sources, result(existing, true));
             List<String> rejected = editorial.validateEvidence(materials, sources, policy);
+            if (rejected.isEmpty()) rejected = PipelinePolicy.revisionRejections(pipeline.publicationCount(key) > 0,
+                    publications.latestConfirmed(key, telegram.getChatId()), operating.getRevisionMode());
             if (!rejected.isEmpty()) return new Prepared(null, sources, new PipelineUseCase.PipelineRun(
                     key, existing.eventVersion(), "HELD", rejected, null, false, false));
             if (allocation == null || allocation.estimatedMicros() < ai.estimatedRequestMicros())
@@ -248,20 +253,53 @@ public class LivePipelineService implements LivePipelineUseCase {
         });
     }
 
-    /** A separate, authenticated action is required to request a fresh response after cost reconciliation. */
+    /** Explicit operator retry; every attempt still goes through current evidence and budget gates. */
     public PipelineUseCase.PipelineRun retryJob(String id) {
+        if (!runtime.live()) throw new IllegalStateException("LIVE_EXTERNAL_ACCESS_DISABLED");
+        var candidate = jobs.findJob(id);
+        if (candidate == null) throw new IllegalStateException("EDITOR_JOB_NOT_FOUND");
         var snapshot = tx.execute(status -> {
+            pipeline.lockEvent(candidate.eventKey());
             var job = jobs.lockJobId(id);
-            if (job == null) throw new IllegalStateException("Only accounted or definitely rejected jobs can be retried");
-            job.requireRetryable();
-            jobs.finishJob(id, "RETRYABLE", "OPERATOR_REQUESTED_RETRY", clock.millis());
-            audit("LIVE_EDITOR_RETRY", id, "operator action");
+            markRetryable(job);
             return pipeline.findNumber(job.eventKey(), job.eventVersion());
         });
         String periodId = "live-usd:" + clock.instant().atZone(java.time.ZoneOffset.UTC).toLocalDate();
         budgets.configurePeriod(periodId, operating.getDailyBudgetMicros(), operating.getDailyRequests());
         return process(Arrays.asList(json.readValue(snapshot.materialsPayload(), SourceMaterial[].class)),
                 operating.policy(), new PipelineUseCase.BudgetAllocation(periodId, ai.estimatedRequestMicros()));
+    }
+
+    /** Joins the inbox requeue transaction, preventing a queued item from racing its retry authorization. */
+    public void requestRetry(SourceMaterial material) {
+        if (!runtime.live()) throw new IllegalStateException("LIVE_EXTERNAL_ACCESS_DISABLED");
+        retryTx.executeWithoutResult(status -> {
+            String key = material.eventKey();
+            if (pipeline.lockEvent(key) == null) return;
+            var version = pipeline.findVersion(key, fingerprint(List.of(material), operating.policy(), sourcePolicies()));
+            if (version == null) return; // A changed policy/material will take the normal new-version path.
+            var job = jobs.lockJob(key, version.fingerprint());
+            if (job == null) throw new IllegalStateException("EDITOR_JOB_NOT_FOUND");
+            markRetryable(job);
+        });
+    }
+
+    private void markRetryable(EditorJob job) {
+        job.requireRetryable();
+        if (pipeline.lockEvent(job.eventKey()) != job.eventVersion())
+            throw new IllegalStateException("EVENT_VERSION_SUPERSEDED");
+        var snapshot = pipeline.findNumber(job.eventKey(), job.eventVersion());
+        if (snapshot.publicationId() != null) throw new IllegalStateException("EDITOR_ALREADY_PUBLISHED_OR_QUEUED");
+        if ("HELD".equals(job.state())) {
+            var reservation = job.reservationId() == null ? null : budgets.get(job.reservationId());
+            if (reservation == null || !"SETTLED".equals(reservation.state()))
+                throw new IllegalStateException("EDITOR_COST_NOT_ACCOUNTED");
+        }
+        var materials = Arrays.asList(json.readValue(snapshot.materialsPayload(), SourceMaterial[].class));
+        var reasons = editorial.validateEvidence(materials, sourcePolicies(), operating.policy());
+        if (!reasons.isEmpty()) throw new IllegalStateException("EDITOR_EVIDENCE_NOT_ELIGIBLE");
+        jobs.finishJob(job.id(), "RETRYABLE", "OPERATOR_REQUESTED_RETRY", clock.millis());
+        audit("LIVE_EDITOR_RETRY", job.id(), "operator action;previousReason=" + safeCode(job.lastError()));
     }
 
     private void uncertain(EditorJob job, String reason) {

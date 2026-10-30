@@ -64,6 +64,7 @@ public class OpsController {
     @PostMapping("/run") public Object run() { return automation.runOnce(); }
     @GetMapping("/ingestion") public Object ingestion() { return automation.ingestionStatus(); }
     @GetMapping("/ingestion/inbox") public Object inbox() { return automation.inboxStatus(); }
+    @GetMapping("/ingestion/failures") public Object articleFailures() { return automation.articleFailures(); }
     @PostMapping("/ingestion/inbox/{id}/retry") public Object retryInbox(@PathVariable String id) { return automation.requeue(id); }
     @PostMapping("/ingestion/poll") public Object poll() { return automation.poll(); }
     @GetMapping("/editor-jobs") public Object editorJobs() { return automation.jobs(); }

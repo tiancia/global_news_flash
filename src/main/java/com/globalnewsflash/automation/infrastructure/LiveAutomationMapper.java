@@ -13,6 +13,7 @@ public interface LiveAutomationMapper extends LiveAutomationRepository {
     @Select("SELECT * FROM live_editor_job WHERE event_key=#{key} AND fingerprint=#{fingerprint} FOR UPDATE")
     EditorJob lockJob(@Param("key") String key, @Param("fingerprint") String fingerprint);
     @Select("SELECT * FROM live_editor_job WHERE id=#{id} FOR UPDATE") EditorJob lockJobId(String id);
+    @Select("SELECT * FROM live_editor_job WHERE id=#{id}") EditorJob findJob(String id);
     @Insert("INSERT INTO live_editor_job VALUES(#{id},#{eventKey},#{eventVersion},#{fingerprint},#{state},#{reservationId},#{leaseUntil},#{createdAt},#{updatedAt},#{lastError})")
     void insertJob(EditorJob job);
     @Update("UPDATE live_editor_job SET state=#{state},last_error=#{error},updated_at=#{now} WHERE id=#{id}")

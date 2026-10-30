@@ -8,7 +8,6 @@ import com.globalnewsflash.ingestion.domain.SourceMaterial.Fact;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
 import com.globalnewsflash.ingestion.domain.SourceSpec;
 import com.globalnewsflash.ingestion.port.out.IngestionSettings;
-import com.globalnewsflash.ingestion.port.in.IngestionUseCase;
 import com.globalnewsflash.ingestion.port.out.SourceCollector;
 import java.net.URI;
 import java.time.Instant;
@@ -32,8 +31,12 @@ public final class LiveSourceCollector implements SourceCollector {
     private final SyndicationFeedParser syndication = new SyndicationFeedParser();
 
     public LiveSourceCollector(IngestionSettings properties, JsonMapper json) {
+        this(properties, json, new BoundedHttpsFetcher(properties));
+    }
+
+    LiveSourceCollector(IngestionSettings properties, JsonMapper json, BoundedHttpsFetcher fetcher) {
         this.properties = properties;
-        fetcher = new BoundedHttpsFetcher(properties);
+        this.fetcher = fetcher;
         articles = new ArticleTextExtractor(properties);
         usgs = new UsgsAdapter(json);
         gdelt = new GdeltAdapter(json);
@@ -61,17 +64,19 @@ public final class LiveSourceCollector implements SourceCollector {
             List<SourceMaterial> metadata = metadata(source, snapshot.payload(), discoveredAt);
             if (offset < 0 || offset > metadata.size()) throw new CollectionFailure("INVALID_SNAPSHOT_OFFSET");
             int nextOffset = Math.min(metadata.size(), offset + properties.getMaxItemsPerSource());
-            List<SourceMaterial> selected = metadata.subList(offset, nextOffset);
+            List<SourceMaterial> selected = metadata.subList(offset, nextOffset).stream()
+                    .filter(item -> !snapshot.excludedItems().contains(sha256(item.externalId()))).toList();
+            var failures = new ArrayList<ItemFailure>();
             List<SourceMaterial> materials = switch (source.type()) {
                 case "USGS", "GDELT" -> admitted(selected, policy);
-                case "FED" -> officialAnnouncements(source, policy, selected, discoveredAt, heartbeat);
-                case "RSS" -> syndicated(source, policy, snapshot.payload(), selected, discoveredAt, heartbeat);
+                case "FED" -> officialAnnouncements(source, policy, selected, discoveredAt, heartbeat, failures);
+                case "RSS" -> syndicated(source, policy, snapshot.payload(), selected, discoveredAt, heartbeat, failures);
                 default -> throw new CollectionFailure("UNKNOWN_SOURCE_TYPE");
             };
             String cursor = metadata.stream().map(LiveSourceCollector::materialTime).max(Comparator.naturalOrder())
                     .filter(time -> !Instant.EPOCH.equals(time)).map(Instant::toString).orElse("feed:" + sha256(snapshot.payload()));
             return new Batch(List.copyOf(materials), snapshot.etag(), snapshot.lastModified(), cursor, false,
-                    nextOffset, nextOffset == metadata.size());
+                    nextOffset, nextOffset == metadata.size(), List.copyOf(failures));
         } catch (HeartbeatFailure failure) { throw failure; }
         catch (BoundedHttpsFetcher.FetchFailure known) { throw new CollectionFailure(known.code()); }
         catch (CollectionFailure known) { throw known; }
@@ -99,45 +104,57 @@ public final class LiveSourceCollector implements SourceCollector {
     }
 
     private List<SourceMaterial> officialAnnouncements(SourceSpec source, SourcePolicy policy,
-            List<SourceMaterial> selected, Instant discoveredAt, Runnable heartbeat) {
+            List<SourceMaterial> selected, Instant discoveredAt, Runnable heartbeat, List<ItemFailure> failures) {
         var result = new ArrayList<SourceMaterial>();
         for (SourceMaterial metadata : admitted(selected, policy)) {
-            var page = fetcher.fetch(metadata.canonicalUrl(), source.allowedHosts(), null, null, heartbeat);
-            List<Fact> facts = articles.article(page.body(), source.articleSelector());
-            if (facts.isEmpty()) throw new CollectionFailure("ARTICLE_BODY_INSUFFICIENT");
-            result.add(new SourceMaterial(metadata.sourceId(), metadata.externalId(), metadata.eventKey(),
-                    metadata.canonicalUrl(), metadata.headline(), metadata.topic(), metadata.producer(), metadata.evidenceChainId(),
-                    metadata.occurredAt(), metadata.publishedAt(), modified(page.lastModified()), discoveredAt, facts, false, false));
+            collectItem(metadata.externalId(), failures, () -> {
+                var page = fetcher.fetch(metadata.canonicalUrl(), source.allowedHosts(), null, null, heartbeat);
+                List<Fact> facts = articles.article(page.body(), source.articleSelector());
+                if (facts.isEmpty()) throw new CollectionFailure("ARTICLE_BODY_INSUFFICIENT");
+                result.add(new SourceMaterial(metadata.sourceId(), metadata.externalId(), metadata.eventKey(),
+                        metadata.canonicalUrl(), metadata.headline(), metadata.topic(), metadata.producer(), metadata.evidenceChainId(),
+                        metadata.occurredAt(), metadata.publishedAt(), modified(page.lastModified()), discoveredAt, facts, false, false));
+            });
         }
         return List.copyOf(result);
     }
 
     private List<SourceMaterial> syndicated(SourceSpec source, SourcePolicy policy, String payload,
-            List<SourceMaterial> selected, Instant discoveredAt, Runnable heartbeat) {
+            List<SourceMaterial> selected, Instant discoveredAt, Runnable heartbeat, List<ItemFailure> failures) {
         Set<String> ids = selected.stream().map(SourceMaterial::externalId).collect(java.util.stream.Collectors.toSet());
         var entries = syndication.parse(payload, source.url()).stream().filter(entry -> ids.contains(entry.externalId())).toList();
         var result = new ArrayList<SourceMaterial>();
         for (var entry : entries) {
-            String url = CanonicalUrl.normalize(entry.url());
-            if (!source.allowedHosts().contains(URI.create(url).getHost())) {
-                // Even content:encoded cannot grant evidence permissions for an unapproved article host.
-                continue;
-            }
-            List<Fact> facts = entry.body() == null ? List.of() : articles.inline(entry.body());
-            Instant revision = entry.updatedAt();
-            if (facts.isEmpty() && source.fetchArticle()) {
-                var page = fetcher.fetch(url, source.allowedHosts(), null, null, heartbeat);
-                facts = articles.article(page.body(), source.articleSelector());
-                if (facts.isEmpty()) throw new CollectionFailure("ARTICLE_BODY_INSUFFICIENT");
-                if (revision == null) revision = modified(page.lastModified());
-            }
-            String eventKey = source.id() + ":" + sha256(entry.externalId());
-            var material = new SourceMaterial(source.id(), entry.externalId(), eventKey, url, entry.title(),
-                    source.topic(), source.producer(), source.id() + ":" + sha256(url), null, entry.publishedAt(),
-                    revision, discoveredAt, facts, facts.isEmpty(), false);
-            if (policy.check(material).isEmpty()) result.add(material);
+            collectItem(entry.externalId(), failures, () -> {
+                String url = CanonicalUrl.normalize(entry.url());
+                if (!source.allowedHosts().contains(URI.create(url).getHost())) {
+                    // Even content:encoded cannot grant evidence permissions for an unapproved article host.
+                    return;
+                }
+                List<Fact> facts = entry.body() == null ? List.of() : articles.inline(entry.body());
+                Instant revision = entry.updatedAt();
+                if (facts.isEmpty() && source.fetchArticle()) {
+                    var page = fetcher.fetch(url, source.allowedHosts(), null, null, heartbeat);
+                    facts = articles.article(page.body(), source.articleSelector());
+                    if (facts.isEmpty()) throw new CollectionFailure("ARTICLE_BODY_INSUFFICIENT");
+                    if (revision == null) revision = modified(page.lastModified());
+                }
+                String eventKey = source.id() + ":" + sha256(entry.externalId());
+                var material = new SourceMaterial(source.id(), entry.externalId(), eventKey, url, entry.title(),
+                        source.topic(), source.producer(), source.id() + ":" + sha256(url), null, entry.publishedAt(),
+                        revision, discoveredAt, facts, facts.isEmpty(), false);
+                if (policy.check(material).isEmpty()) result.add(material);
+            });
         }
         return List.copyOf(result);
+    }
+
+    private void collectItem(String externalId, List<ItemFailure> failures, Runnable collect) {
+        try { collect.run(); }
+        catch (HeartbeatFailure lost) { throw lost; }
+        catch (BoundedHttpsFetcher.FetchFailure failure) { failures.add(new ItemFailure(sha256(externalId), failure.code())); }
+        catch (CollectionFailure failure) { failures.add(new ItemFailure(sha256(externalId), failure.code())); }
+        catch (RuntimeException invalid) { failures.add(new ItemFailure(sha256(externalId), "ARTICLE_PROCESSING_FAILED")); }
     }
 
     private static Instant materialTime(SourceMaterial material) {

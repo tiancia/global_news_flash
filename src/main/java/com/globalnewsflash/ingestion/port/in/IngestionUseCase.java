@@ -1,6 +1,7 @@
 package com.globalnewsflash.ingestion.port.in;
 
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
+import com.globalnewsflash.ingestion.domain.ArticleFailure;
 import java.util.List;
 
 /** Public use cases of the ingestion module. */
@@ -22,5 +23,6 @@ public interface IngestionUseCase {
     void retry(String id, String code);
     List<SourceStatus> status();
     List<InboxStatus> inboxStatus();
-    void requeue(String id);
+    List<ArticleFailure> articleFailures();
+    SourceMaterial requeue(String id);
 }

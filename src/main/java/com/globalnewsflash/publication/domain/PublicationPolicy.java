@@ -74,6 +74,10 @@ public record PublicationPolicy(Duration lease, int maxAttempts, int maxPerHour,
                     operation.attempts() >= maxAttempts ? "RETRY_LIMIT_REACHED" : result.error(),
                     operation.synthetic() ? null : now.plus(result.retryAfter()));
             case UNKNOWN -> new DeliveryDecision("UNKNOWN", null, null, result.error(), null);
+            case RETRYABLE -> new DeliveryDecision(operation.attempts() >= maxAttempts ? "FAILED" : "RETRY_WAIT",
+                    operation.attempts() >= maxAttempts ? null : now.plusSeconds(Math.max(result.retryAfter().toSeconds(),
+                            Math.min(3600L, 30L << Math.min(7, Math.max(0, operation.attempts() - 1))))),
+                    null, operation.attempts() >= maxAttempts ? "RETRY_LIMIT_REACHED" : result.error(), null);
             case FAILED -> new DeliveryDecision("FAILED", null, null, result.error(), null);
         };
     }
@@ -98,7 +102,7 @@ public record PublicationPolicy(Duration lease, int maxAttempts, int maxPerHour,
                 && (result.messageId() == null || result.messageId().isBlank() || result.messageId().length() > 128)) {
             return DeliveryResult.unknown("MISSING_MESSAGE_ID");
         }
-        if (result.outcome() == DeliveryResult.Outcome.RATE_LIMITED
+        if ((result.outcome() == DeliveryResult.Outcome.RATE_LIMITED || result.outcome() == DeliveryResult.Outcome.RETRYABLE)
                 && (result.retryAfter() == null || result.retryAfter().isNegative()
                     || result.retryAfter().isZero() || result.retryAfter().compareTo(java.time.Duration.ofDays(7)) > 0)) {
             return DeliveryResult.unknown("INVALID_RETRY_AFTER");

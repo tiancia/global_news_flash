@@ -89,6 +89,24 @@ class PublicationServiceTest {
         assertThat(rebuilt.isPaused()).isTrue();
     }
 
+    @Test void preSendTransientFailureRetriesWithBackoffAndStopsAtAttemptLimit() {
+        var operation = enqueue("preflight-retry");
+        doReturn(DeliveryResult.retryable("TELEGRAM_PREFLIGHT_UNAVAILABLE", Duration.ofSeconds(30))).when(gateway).deliver(any());
+        service.setPaused(false);
+        var first = service.dispatch(operation.id());
+        assertThat(first.state()).isEqualTo("RETRY_WAIT");
+        assertThat(first.nextAttemptAt()).isEqualTo(now.get().plusSeconds(30));
+        service.processDueBatch();
+        verify(gateway, times(1)).deliver(any());
+        now.set(first.nextAttemptAt());
+        var second = service.dispatch(operation.id());
+        assertThat(second.nextAttemptAt()).isEqualTo(now.get().plusSeconds(60));
+        now.set(second.nextAttemptAt());
+        assertThat(service.dispatch(operation.id()).state()).isEqualTo("FAILED");
+        service.processDueBatch();
+        verify(gateway, times(3)).deliver(any());
+    }
+
     @Test
     void sameImmutableVersionIsIdempotentButDifferentContentIsRejected() {
         PublicationOperation first = enqueue("event-1");

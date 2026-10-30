@@ -58,7 +58,7 @@ public class LiveAutomationService implements AutomationUseCase {
         this.evidence = evidence;
     }
 
-    public List<String> readinessReasons() {
+    private List<String> editingReasons() {
         var aiReasons = ai.readinessReasons();
         Long estimate = null;
         boolean invalidEstimate = false;
@@ -73,12 +73,30 @@ public class LiveAutomationService implements AutomationUseCase {
                 operating.getCycleLease(), ingestionProperties.getRequestTimeoutSeconds() * 1000L).reasons();
     }
 
+    public List<String> readinessReasons() {
+        var reasons = new ArrayList<>(editingReasons());
+        // Explicit preview mode can edit without delivery; enabled delivery must be configured before spending.
+        if (telegram.isEnabled() && !telegram.isConfigured()) reasons.add("TELEGRAM_CONFIGURATION_REQUIRED");
+        return List.copyOf(reasons);
+    }
+
     public Map<String, Object> status() {
         var reasons = readinessReasons();
         var status = new LinkedHashMap<String, Object>();
         status.put("schedulerEnabled", operating.isEnabled());
-        status.put("ready", reasons.isEmpty());
-        status.put("reasons", reasons);
+        var publicationReasons = new ArrayList<String>();
+        if (!runtime.live()) publicationReasons.add("LIVE_EXTERNAL_ACCESS_DISABLED");
+        if (!telegram.isEnabled()) publicationReasons.add("TELEGRAM_DELIVERY_DISABLED");
+        if (!telegram.isConfigured()) publicationReasons.add("TELEGRAM_CONFIGURATION_REQUIRED");
+        var allReasons = new java.util.LinkedHashSet<>(reasons);
+        allReasons.addAll(publicationReasons);
+        boolean ready = allReasons.isEmpty();
+        status.put("ready", ready);
+        status.put("reasons", List.copyOf(allReasons));
+        status.put("editingReady", editingReasons().isEmpty());
+        status.put("publicationReady", publicationReasons.isEmpty());
+        status.put("publicationReasons", publicationReasons);
+        status.put("running", ready && operating.isEnabled() && !publications.isPaused());
         status.put("telegramDeliveryEnabled", telegram.isEnabled());
         status.put("telegramConfigured", telegram.isConfigured());
         status.put("revisionMode", operating.getRevisionMode());
@@ -104,7 +122,7 @@ public class LiveAutomationService implements AutomationUseCase {
             pipeline.recoverExpired();
             var polling = ingestion.poll(() -> renew(runId));
             for (var source : polling.sources()) {
-                if ("FAILED".equals(source.state())) mapper.insertAlert(new Alert(
+                if (source.code() != null) mapper.insertAlert(new Alert(
                         UUID.randomUUID().toString(), "SOURCE_ERROR", source.sourceId(), source.code(), clock.millis()));
             }
             renew(runId);
@@ -157,7 +175,11 @@ public class LiveAutomationService implements AutomationUseCase {
     }
     public Object ingestionStatus() { return ingestion.status(); }
     public Object inboxStatus() { return ingestion.inboxStatus(); }
-    public Object requeue(String id) { ingestion.requeue(id); return ingestion.inboxStatus(); }
+    public Object requeue(String id) {
+        tx.executeWithoutResult(status -> pipeline.requestRetry(ingestion.requeue(id)));
+        return ingestion.inboxStatus();
+    }
+    public Object articleFailures() { return ingestion.articleFailures(); }
     public Object jobs() { return mapper.jobs(); }
     public Object alerts() { return mapper.alerts(); }
 

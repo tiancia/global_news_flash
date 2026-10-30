@@ -1,12 +1,19 @@
 package com.globalnewsflash.ingestion.port.out;
 
 import com.globalnewsflash.ingestion.domain.InboxRow;
+import com.globalnewsflash.ingestion.domain.ArticleFailure;
 import com.globalnewsflash.ingestion.domain.SourceRegistration;
 import com.globalnewsflash.ingestion.domain.SourceState;
 import java.util.List;
 
 /** Persistence contract; locking and compare-and-set semantics are implemented by the adapter. */
 public interface LiveIngestionRepository {
+    ArticleFailure articleFailure(String id);
+    void insertArticleFailure(ArticleFailure failure);
+    void updateArticleFailure(ArticleFailure failure);
+    void recoverArticleFailure(String id, long now);
+    List<ArticleFailure> articleFailures();
+    List<String> quarantinedItems(String sourceId, String snapshotKey);
     void createSourceState(String sourceId);
     SourceState lockSourceState(String sourceId);
     List<SourceState> sourceStates();

@@ -9,6 +9,7 @@ import java.util.List;
 public interface LiveAutomationRepository {
     EditorJob lockJob(String key, String fingerprint);
     EditorJob lockJobId(String id);
+    EditorJob findJob(String id);
     void insertJob(EditorJob job);
     void finishJob(String id, String state, String error, long now);
     int restartJob(String id, String reservation, long until, long now);

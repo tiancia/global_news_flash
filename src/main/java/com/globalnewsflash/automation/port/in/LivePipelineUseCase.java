@@ -11,4 +11,5 @@ public interface LivePipelineUseCase {
     int recoverExpired();
     Object resolveCost(String id, long actualMicros, String note);
     PipelineUseCase.PipelineRun retryJob(String id);
+    void requestRetry(SourceMaterial material);
 }

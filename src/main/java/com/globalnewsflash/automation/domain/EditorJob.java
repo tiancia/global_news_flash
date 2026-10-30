@@ -8,7 +8,13 @@ public record EditorJob(String id, String eventKey, int eventVersion, String fin
         if (!"UNCERTAIN".equals(state)) throw new IllegalStateException("Job is not uncertain");
     }
     public void requireRetryable() {
-        if (!java.util.Set.of("ACCOUNTED", "RETRYABLE").contains(state)) throw new IllegalStateException("Only accounted or definitely rejected jobs can be retried");
+        if (java.util.Set.of("ACCOUNTED", "RETRYABLE").contains(state)) return;
+        if ("HELD".equals(state) && lastError != null && java.util.Set.of(
+                "DUPLICATE_STATEMENT", "UNSUPPORTED_NUMBER", "UNSUPPORTED_QUOTE", "UNSUPPORTED_STATEMENT",
+                "INVALID_ENGLISH_STATEMENT", "INVALID_EDITOR_RESPONSE", "DRAFT_TOO_LONG",
+                "OPENAI_OUTPUT_INVALID", "OPENAI_RESPONSE_INCOMPLETE",
+                "DEEPSEEK_OUTPUT_INVALID", "DEEPSEEK_RESPONSE_INCOMPLETE").contains(lastError)) return;
+        throw new IllegalStateException("EDITOR_JOB_NOT_RETRYABLE");
     }
 }
 

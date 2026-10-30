@@ -13,6 +13,7 @@ public interface AutomationUseCase {
     Object ingestionStatus();
     Object inboxStatus();
     Object requeue(String id);
+    Object articleFailures();
     Object jobs();
     Object alerts();
 }

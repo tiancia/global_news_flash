@@ -4,6 +4,7 @@ import static com.globalnewsflash.shared.Hashing.sha256;
 
 import com.globalnewsflash.automation.port.out.RuntimeSettings;
 import com.globalnewsflash.ingestion.domain.InboxRow;
+import com.globalnewsflash.ingestion.domain.ArticleFailure;
 import com.globalnewsflash.ingestion.domain.IngestionPolicy;
 import com.globalnewsflash.ingestion.domain.SourceMaterial;
 import com.globalnewsflash.ingestion.domain.SourcePolicy;
@@ -130,9 +131,11 @@ public class LiveIngestionService implements IngestionUseCase {
                     });
                     if (!Boolean.TRUE.equals(saved)) throw new SourceCollector.CollectionFailure("SOURCE_LEASE_LOST");
                 }
-                var batch = collector.collect(spec, policy(admitted), snapshot, leased.snapshotOffset(), discoveredAt, pulse);
+                var collectionSnapshot = new SourceCollector.Snapshot(snapshot.payload(), snapshot.etag(), snapshot.lastModified(),
+                        snapshot.notModified(), Set.copyOf(mapper.quarantinedItems(spec.id(), sha256(snapshot.payload()))));
+                var batch = collector.collect(spec, policy(admitted), collectionSnapshot, leased.snapshotOffset(), discoveredAt, pulse);
                 pulse.run();
-                Integer inserted = transactions.execute(status -> {
+                SourcePoll outcome = transactions.execute(status -> {
                     var state = mapper.lockSourceState(spec.id());
                     if (state == null || !owner.equals(state.leaseOwner()) || state.leaseUntil() <= clock.millis()) {
                         throw new SourceCollector.CollectionFailure("SOURCE_LEASE_LOST");
@@ -142,10 +145,12 @@ public class LiveIngestionService implements IngestionUseCase {
                         throw new SourceCollector.CollectionFailure("SOURCE_ADMISSION_CHANGED");
                     }
                     SourcePolicy currentPolicy = policy(current);
+                    String snapshotKey = sha256(snapshot.payload());
                     int stored = 0;
                     long backlog = mapper.pendingCount();
                     for (SourceMaterial material : batch.materials()) {
                         if (!currentPolicy.check(material).isEmpty()) throw new SourceCollector.CollectionFailure("SOURCE_ADMISSION_CHANGED");
+                        mapper.recoverArticleFailure(articleFailureId(spec.id(), snapshotKey, sha256(material.externalId())), clock.millis());
                         String fingerprint = materialFingerprint(material);
                         String id = sha256(material.sourceId() + "\n" + material.eventKey() + "\n" + fingerprint);
                         if (mapper.inboxId(id) != null) continue;
@@ -158,21 +163,35 @@ public class LiveIngestionService implements IngestionUseCase {
                                 0, clock.millis(), null, 0, clock.millis(), null));
                         stored++;
                     }
+                    boolean retryItems = false;
+                    for (var failure : batch.failures()) {
+                        String id = articleFailureId(spec.id(), snapshotKey, failure.itemKey());
+                        var previous = mapper.articleFailure(id);
+                        int attempts = previous == null ? 1 : Math.min(ArticleFailure.MAX_ATTEMPTS, previous.attempts() + 1);
+                        boolean retry = attempts < ArticleFailure.MAX_ATTEMPTS;
+                        retryItems |= retry;
+                        var record = new ArticleFailure(id, spec.id(), snapshotKey, failure.itemKey(), attempts,
+                                retry ? "RETRY" : "QUARANTINED", IngestionPolicy.safe(failure.code(), 80, "ARTICLE_PROCESSING_FAILED"), clock.millis());
+                        if (previous == null) mapper.insertArticleFailure(record);
+                        else mapper.updateArticleFailure(record);
+                    }
                     int changed;
-                    if (batch.complete()) {
+                    if (batch.complete() && !retryItems) {
                         String cursor = batch.notModified() ? state.cursorValue() : batch.cursor();
                         changed = mapper.finishSource(spec.id(), owner, cursor, batch.etag(), batch.lastModified(), clock.millis(),
                                 clock.millis() + properties.getSourcePollIntervalMs(), batch.materials().size());
                     } else {
                         // The frozen snapshot survives restarts. Final feed validators advance only after all bounded pages commit.
-                        changed = mapper.advanceSnapshot(spec.id(), owner, batch.nextOffset(),
+                        changed = mapper.advanceSnapshot(spec.id(), owner, retryItems ? leased.snapshotOffset() : batch.nextOffset(),
                                 clock.millis() + properties.getPollDelayMs(), clock.millis(), batch.materials().size());
                     }
                     if (changed != 1) throw new SourceCollector.CollectionFailure("SOURCE_LEASE_LOST");
-                    return stored;
+                    String code = batch.failures().isEmpty() ? null : retryItems ? "ARTICLE_RETRY_PENDING" : "ARTICLE_QUARANTINED";
+                    String result = code != null ? "PARTIAL" : batch.notModified() ? "NOT_MODIFIED"
+                            : batch.complete() ? "COLLECTED" : "SNAPSHOT_PENDING";
+                    return new SourcePoll(spec.id(), result, batch.materials().size(), stored, code);
                 });
-                outcomes.add(new SourcePoll(spec.id(), batch.notModified() ? "NOT_MODIFIED" : batch.complete() ? "COLLECTED" : "SNAPSHOT_PENDING", batch.materials().size(),
-                        inserted == null ? 0 : inserted, null));
+                outcomes.add(outcome);
             } catch (SourceCollector.HeartbeatFailure leaseLost) {
                 throw leaseLost;
             } catch (RuntimeException failure) {
@@ -184,7 +203,7 @@ public class LiveIngestionService implements IngestionUseCase {
             pulse.run();
         }
         return new PollSummary(true, outcomes.size(), outcomes.stream().mapToInt(SourcePoll::stored).sum(),
-                (int) outcomes.stream().filter(result -> "FAILED".equals(result.state())).count(), mapper.pendingCount(), List.copyOf(outcomes));
+                (int) outcomes.stream().filter(result -> result.code() != null).count(), mapper.pendingCount(), List.copyOf(outcomes));
     }
 
     /** Claims rows durably. An interrupted worker's rows become available after the inbox lease expires. */
@@ -236,21 +255,28 @@ public class LiveIngestionService implements IngestionUseCase {
                 row.detail(), row.attempts(), row.createdAt(), row.completedAt(), row.nextAttemptAt())).toList();
     }
 
+    public List<ArticleFailure> articleFailures() { return mapper.articleFailures(); }
+
     /** Requeue held or known failed editorial work. Successful/uncertain model or publication work is never reset here. */
-    public void requeue(String id) {
+    public SourceMaterial requeue(String id) {
         if (!active()) throw new IllegalStateException("LIVE_EXTERNAL_ACCESS_DISABLED");
-        transactions.executeWithoutResult(status -> {
+        return transactions.execute(status -> {
             var row = mapper.lockInbox(id);
             IngestionPolicy.requireRequeueable(row);
             var source = mapper.lockSource(row.sourceId());
             var material = json.readValue(row.materialPayload(), SourceMaterial.class);
             if (source == null || !policy(source).check(material).isEmpty()) throw new IllegalStateException("SOURCE_NOT_ADMITTED");
             mapper.requeue(id, clock.millis());
+            return material;
         });
     }
 
 
     private static SourcePolicy policy(SourceRegistration source) { return source.policy(); }
+
+    private static String articleFailureId(String source, String snapshot, String item) {
+        return sha256(source + "\n" + snapshot + "\n" + item);
+    }
 
     private String materialFingerprint(SourceMaterial material) {
         return sha256(json.writeValueAsString(material.versionIdentity(false, false)));
